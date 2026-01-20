@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+pgeocode
+python-dateutil
+matplotlib
+python-dateutil
+pyinstaller
+protobuf==4.25.3

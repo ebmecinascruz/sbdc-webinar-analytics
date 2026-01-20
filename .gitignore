@@ -25,6 +25,10 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+data/
+outputs/
+*.csv
+*.xlsx
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -143,6 +147,12 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.streamlit/secrets.toml
+.streamlit/*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
 
 # Spyder project settings
 .spyderproject

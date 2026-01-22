@@ -23,6 +23,11 @@ from scripts.attendance_plots import (
     plot_attendance_composition,
     plot_client_composition_per_webinar,
 )
+from scripts.center_mapping import (
+    map_centers_for_nonclients,
+    map_centers_for_clients,
+)
+
 import matplotlib.pyplot as plt
 
 
@@ -451,6 +456,78 @@ if att_master_path.exists() and ppl_master_path.exists():
 
 else:
     st.info("Masters not found yet. Run the pipeline first.")
+
+
+# ============================
+# Post-processing: Center mapping (auto-run)
+# ============================
+st.divider()
+st.subheader("Center mapping (clients vs non-clients)")
+
+meta = st.session_state.last_run_meta
+if not meta:
+    st.info("Run the pipeline first so inputs are available for post-processing.")
+else:
+    neoserra_path = Path(meta["neoserra_path"])
+    centers_path = Path(meta["centers_path"])
+    cache_path = Path(meta["cache_path"])
+
+    if not neoserra_path.exists():
+        st.info("NeoSerra file not found yet. Run the pipeline first.")
+    elif not centers_path.exists():
+        st.error(f"Centers file not found: {centers_path}")
+    else:
+        # Load inputs
+        neoserra_raw_df = pd.read_csv(neoserra_path)
+        centers_df = pd.read_csv(centers_path)
+
+        zip_lookup_df = None
+        if cache_path.exists():
+            zip_lookup_df = pd.read_csv(cache_path)
+
+        map_out_dir = base_path / "center_mapping"
+        map_out_dir.mkdir(parents=True, exist_ok=True)
+
+        out_nonclients_html = map_out_dir / "nonclients_zip_footprint.html"
+        out_clients_html = map_out_dir / "clients_zip_footprint.html"
+
+        # Auto-run mapping every time this section is reached
+        with st.spinner("Generating non-client ZIP footprint map..."):
+            _nonclients_html_path, _ = map_centers_for_nonclients(
+                people_master_df=people_master_df,
+                centers_df=centers_df,
+                zip_lookup_df=zip_lookup_df,  # ok if None
+                raw_zip_col="Zip/Postal Code",
+                out_html=out_nonclients_html,
+            )
+
+        with st.spinner("Generating client ZIP footprint map..."):
+            _clients_html_path = map_centers_for_clients(
+                neoserra_df=neoserra_raw_df,
+                raw_zip_col="Physical Address ZIP Code",
+                out_html=out_clients_html,
+            )
+
+        st.success("Center maps generated and saved.")
+        st.caption(f"Saved: {out_nonclients_html}")
+        st.caption(f"Saved: {out_clients_html}")
+
+        show_prev = st.toggle("Preview latest maps", value=True)
+        if show_prev:
+            if out_nonclients_html.exists():
+                st.markdown("### Non-clients ZIP footprint")
+                st.components.v1.html(
+                    out_nonclients_html.read_text(encoding="utf-8"),
+                    height=650,
+                )
+
+            if out_clients_html.exists():
+                st.markdown("### Clients ZIP footprint")
+                st.components.v1.html(
+                    out_clients_html.read_text(encoding="utf-8"),
+                    height=650,
+                )
+
 
 if batch_df is not None:
     st.divider()

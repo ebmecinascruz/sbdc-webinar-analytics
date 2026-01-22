@@ -7,3 +7,5 @@ matplotlib
 python-dateutil
 pyinstaller
 protobuf==4.25.3
+folium
+ipykernel

@@ -57,6 +57,8 @@ Deliver a **local-only Streamlit application** that:
 - maintains master tables over time
 - computes longitudinal KPIs
 - generates professional charts
+- generates geographic visualizations for client and non-client attendance
+
 - runs via **double-click `.exe`**
 - requires **no Python installation**
 
@@ -69,7 +71,7 @@ FINAL RESULT
 - App shuts down cleanly when browser closes
 - All CSV outputs persist to disk
 - KPIs update incrementally
-- Graphs are saved & overwritten cleanly
+- Graphs and maps are saved & overwritten cleanly
 - Tested on bare-bones Windows machines
 
 ------------------------------------------------------------
@@ -114,6 +116,9 @@ dist/
       never_attended.csv
     .streamlit/
       config.toml
+    hooks/
+      hook-google.py
+      hook-streamlit.py
 ```
 
 DO NOT:
@@ -144,6 +149,19 @@ PIPELINE OVERVIEW
 - `attendance_master.csv`
 - safe upserts via `_attendance_key`
 
+### Geographic Mapping Outputs
+The application produces two separate geographic maps to support center-level analysis:
+
+**1. Client Distribution Map**
+- Includes attendees identified as existing clients
+- Used to understand geographic spread of current client participation
+
+
+**2. Non-Client Center Assignment Map**
+- Includes attendees not matched to existing clients
+- Points (Zip codes) are color-coded by assignment to nearest center
+
+
 ------------------------------------------------------------
 KPI DEFINITIONS (STANDING AUDIENCE MODEL)
 ------------------------------------------------------------
@@ -165,7 +183,7 @@ VIRTUAL ENV SETUP
 ------------------------------------------------------------
 ```
 python -m venv .venv
-.venv\\Scripts\\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -175,11 +193,12 @@ PYINSTALLER BUILD COMMAND
 
 BUILD:
 ```
-pyinstaller ^
-  --name WebinarApp ^
-  --noconsole ^
-  --additional-hooks-dir hooks ^
-  --hidden-import pgeocode ^
+.\.venv\Scripts\pyinstaller `
+  --name WebinarApp `
+  --noconsole `
+  --additional-hooks-dir hooks `
+  --hidden-import pgeocode `
+  --collect-all folium `
   run_app.py
 ```
 ------------------------------------------------------------

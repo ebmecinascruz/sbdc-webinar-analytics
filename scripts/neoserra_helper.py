@@ -1,5 +1,7 @@
 import pandas as pd
 
+from scripts.zip_codes import clean_zip_5, build_zip_ref_pgeocode, add_zip_problems
+
 
 def build_ns_lookup(
     ns: pd.DataFrame,
@@ -65,5 +67,35 @@ def build_ns_lookup(
     # Safety check
     if out.columns.duplicated().any():
         raise ValueError("Output lookup has duplicate column labels.")
+
+    return out
+
+
+def add_zip_geography(
+    people: pd.DataFrame,
+    raw_zip_col: str,
+    *,
+    zip_col_out: str = "zip_clean",
+) -> pd.DataFrame:
+    # 1) clean zip
+    out = clean_zip_5(people, raw_zip_col, out_col=zip_col_out)
+    out[zip_col_out] = out[zip_col_out].astype("string").str.zfill(5)
+
+    # 2) pgeocode ref for unique zips
+    unique_zips = out[zip_col_out].dropna().drop_duplicates().tolist()
+    zip_ref = build_zip_ref_pgeocode(unique_zips)
+
+    # 3) merge + problems
+    out = out.merge(
+        zip_ref,
+        how="left",
+        left_on=zip_col_out,
+        right_on="zip_clean",
+        suffixes=("", "_ref"),
+    )
+    # if you merged on left_on, clean up duplicate key
+    out = out.drop(columns=["zip_clean_ref"], errors="ignore")
+
+    out = add_zip_problems(out, zip_col=zip_col_out)
 
     return out

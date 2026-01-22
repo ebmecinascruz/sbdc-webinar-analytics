@@ -3,6 +3,20 @@ import numpy as np
 import os
 import pgeocode
 
+ALLOWED_STATES = {"CA"}
+ALLOWED_COUNTIES = {"Los Angeles", "Ventura", "Santa Barbara"}
+
+ZIP_COLS = [
+    "zip_clean",
+    "zip_lat",
+    "zip_lon",
+    "zip_state",
+    "zip_county",
+    "Assigned Center Abbr",
+    "Assigned Center Name",
+    "distance_miles",
+]
+
 
 def clean_zip_5(
     df: pd.DataFrame, raw_zip_col: str, out_col: str = "zip_clean"
@@ -50,10 +64,6 @@ def build_zip_ref_pgeocode(unique_zips: list[str]) -> pd.DataFrame:
             "zip_county_code",
         ]
     ]
-
-
-ALLOWED_STATES = {"CA"}
-ALLOWED_COUNTIES = {"Los Angeles", "Ventura", "Santa Barbara"}
 
 
 def add_zip_problems(
@@ -127,9 +137,7 @@ def compute_zip_to_center(
     z["Assigned Center Abbr"] = centers.iloc[idx]["center_abbr"].to_numpy()
     z["Assigned Center Name"] = centers.iloc[idx]["center_name"].to_numpy()
 
-    return z[
-        ["zip_clean", "Assigned Center Abbr", "Assigned Center Name", "distance_miles"]
-    ]
+    return z[ZIP_COLS]
 
 
 def update_zip_center_cache(
@@ -140,14 +148,7 @@ def update_zip_center_cache(
         cache = pd.read_csv(cache_path, dtype={"zip_clean": "string"})
         cache["zip_clean"] = cache["zip_clean"].astype("string").str.zfill(5)
     else:
-        cache = pd.DataFrame(
-            columns=[
-                "zip_clean",
-                "Assigned Center Abbr",
-                "Assigned Center Name",
-                "distance_miles",
-            ]
-        )
+        cache = pd.DataFrame(columns=[ZIP_COLS])
 
     if cache.empty:
         updated = zip_to_center_new.copy()

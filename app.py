@@ -91,9 +91,6 @@ if "last_run_meta" not in st.session_state:
     # small dict with run directory paths, etc.
     st.session_state.last_run_meta = None
 
-if "center_report_result" not in st.session_state:
-    st.session_state.center_report_result = None
-
 if "center_report_dates" not in st.session_state:
     st.session_state.center_report_dates = []
 
@@ -480,20 +477,16 @@ if att_master_path.exists() and ppl_master_path.exists():
     if "people_master_df" not in locals():
         people_master_df = pd.read_csv(ppl_master_path)
 
-    # Build list of available dates
-    # (Match your column name — based on your screenshot it's "Webinar Date")
     DATE_COL = "Webinar Date"
     if DATE_COL not in attendance_master_df.columns:
         st.error(f"attendance_master is missing '{DATE_COL}'.")
     else:
-        # normalize to date strings for the multiselect
         _dates = _to_date_series(attendance_master_df[DATE_COL])
         available_dates = sorted({d for d in _dates.dropna().tolist()})
 
         if not available_dates:
             st.info("No webinar dates found in attendance_master.")
         else:
-            # Persist selection
             default_dates = st.session_state.center_report_dates or [
                 available_dates[-1]
             ]
@@ -505,8 +498,6 @@ if att_master_path.exists() and ppl_master_path.exists():
                 key="center_report_date_picker",
                 help="We keep only attended=True rows, then keep the latest date per person.",
             )
-
-            # Save chosen dates in session_state immediately
             st.session_state.center_report_dates = picked_dates
 
             report_prefix = st.text_input(
@@ -516,11 +507,13 @@ if att_master_path.exists() and ppl_master_path.exists():
             )
 
             report_out_dir = base_path / "center_reports" / report_prefix
+            report_out_dir.mkdir(parents=True, exist_ok=True)
 
             run_center_report_btn = st.button(
                 "Generate center report CSVs",
                 type="primary",
                 use_container_width=True,
+                key="center_report_generate_btn",
             )
 
             if run_center_report_btn:
@@ -537,48 +530,46 @@ if att_master_path.exists() and ppl_master_path.exists():
                         prefix=report_prefix,
                         attendance_key="email_clean",
                         attendance_date_col=DATE_COL,
-                        attendance_attended_col="Attended",
-                        final_center_col="Final Center",  # change if your final col differs
+                        attendance_attended_col="Attended",  # keep your current
+                        final_center_col="Final Center",
                     )
-
-                # Persist result so preview works after reruns
-                st.session_state.center_report_result = {
-                    "out_dir": str(report_out_dir),
-                    "paths": [str(p) for p in result["paths"]],
-                    "centers": sorted(result["center_dfs"].keys()),
-                    # store dfs too (ok unless huge). if huge, we can store only paths and load on demand
-                    "center_dfs": result["center_dfs"],
-                }
 
                 st.success(f"Saved {len(result['paths'])} center report file(s).")
                 st.caption(f"Folder: {report_out_dir}")
 
-            # ---- Preview block: uses session_state, not local vars ----
-            saved = st.session_state.center_report_result
-            if saved:
-                st.caption(f"Last generated folder: {saved['out_dir']}")
-                st.caption(f"Files: {len(saved['paths'])}")
+            # ---- Preview from disk (no session_state needed) ----
+            st.divider()
+            st.markdown("### Preview saved center reports")
 
-                show_preview = st.toggle(
-                    "Preview center outputs",
-                    value=True,
-                    key="center_report_preview",
-                )
-                if show_preview:
-                    picked_center = st.selectbox(
-                        "Preview a center",
-                        saved["centers"],
-                        key="center_report_center_pick",
-                    )
-                    st.dataframe(
-                        saved["center_dfs"][picked_center],
-                        width="stretch",
-                        hide_index=True,
-                    )
+            # Find CSVs matching the prefix
+            csvs = sorted(report_out_dir.glob(f"{report_prefix}_*.csv"))
+
+            if not csvs:
+                st.info("No center report CSVs found yet. Generate the report first.")
             else:
-                st.info("Generate a center report to enable preview.")
+                # Show center names by stripping prefix_
+                def _label(p: Path) -> str:
+                    name = p.stem  # no .csv
+                    if name.startswith(report_prefix + "_"):
+                        return name[len(report_prefix) + 1 :]
+                    return name
+
+                center_options = {_label(p): p for p in csvs}
+                picked_center = st.selectbox(
+                    "Preview a center",
+                    options=sorted(center_options.keys()),
+                    key="center_report_center_pick",
+                )
+
+                preview_path = center_options[picked_center]
+                st.caption(f"File: {preview_path}")
+
+                preview_df = pd.read_csv(preview_path)
+                st.dataframe(preview_df, width="stretch", hide_index=True)
+
 else:
     st.info("Masters not found yet. Run the pipeline first.")
+
 
 # ============================
 # Post-processing: Center mapping (auto-run)

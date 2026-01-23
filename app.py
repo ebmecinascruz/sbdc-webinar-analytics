@@ -27,7 +27,10 @@ from scripts.center_mapping import (
     map_centers_for_nonclients,
     map_centers_for_clients,
 )
-
+from scripts.center_splitting import (
+    build_latest_attended_center_reports,
+    _to_date_series,
+)
 import matplotlib.pyplot as plt
 
 
@@ -87,6 +90,12 @@ if "output_paths" not in st.session_state:
 if "last_run_meta" not in st.session_state:
     # small dict with run directory paths, etc.
     st.session_state.last_run_meta = None
+
+if "center_report_result" not in st.session_state:
+    st.session_state.center_report_result = None
+
+if "center_report_dates" not in st.session_state:
+    st.session_state.center_report_dates = []
 
 
 # ============================
@@ -457,6 +466,119 @@ if att_master_path.exists() and ppl_master_path.exists():
 else:
     st.info("Masters not found yet. Run the pipeline first.")
 
+
+# ============================
+# Center reports (latest attended per person)
+# ============================
+st.divider()
+st.subheader("Center reports (Latest attended per person)")
+
+if att_master_path.exists() and ppl_master_path.exists():
+    # We already loaded these above for KPIs, but in case this section runs independently:
+    if "attendance_master_df" not in locals():
+        attendance_master_df = pd.read_csv(att_master_path)
+    if "people_master_df" not in locals():
+        people_master_df = pd.read_csv(ppl_master_path)
+
+    # Build list of available dates
+    # (Match your column name — based on your screenshot it's "Webinar Date")
+    DATE_COL = "Webinar Date"
+    if DATE_COL not in attendance_master_df.columns:
+        st.error(f"attendance_master is missing '{DATE_COL}'.")
+    else:
+        # normalize to date strings for the multiselect
+        _dates = _to_date_series(attendance_master_df[DATE_COL])
+        available_dates = sorted({d for d in _dates.dropna().tolist()})
+
+        if not available_dates:
+            st.info("No webinar dates found in attendance_master.")
+        else:
+            # Persist selection
+            default_dates = st.session_state.center_report_dates or [
+                available_dates[-1]
+            ]
+
+            picked_dates = st.multiselect(
+                "Select webinar date(s) to include",
+                options=available_dates,
+                default=default_dates,
+                key="center_report_date_picker",
+                help="We keep only attended=True rows, then keep the latest date per person.",
+            )
+
+            # Save chosen dates in session_state immediately
+            st.session_state.center_report_dates = picked_dates
+
+            report_prefix = st.text_input(
+                "Output file prefix",
+                value="latest_attended_selected_dates",
+                key="center_report_prefix",
+            )
+
+            report_out_dir = base_path / "center_reports" / report_prefix
+
+            run_center_report_btn = st.button(
+                "Generate center report CSVs",
+                type="primary",
+                use_container_width=True,
+            )
+
+            if run_center_report_btn:
+                if not picked_dates:
+                    st.error("Pick at least one webinar date.")
+                    st.stop()
+
+                with st.spinner("Building center reports..."):
+                    result = build_latest_attended_center_reports(
+                        attendance=attendance_master_df,
+                        people=people_master_df,
+                        include_dates=[str(d) for d in picked_dates],
+                        output_dir=report_out_dir,
+                        prefix=report_prefix,
+                        attendance_key="email_clean",
+                        attendance_date_col=DATE_COL,
+                        attendance_attended_col="Attended",
+                        final_center_col="Final Center",  # change if your final col differs
+                    )
+
+                # Persist result so preview works after reruns
+                st.session_state.center_report_result = {
+                    "out_dir": str(report_out_dir),
+                    "paths": [str(p) for p in result["paths"]],
+                    "centers": sorted(result["center_dfs"].keys()),
+                    # store dfs too (ok unless huge). if huge, we can store only paths and load on demand
+                    "center_dfs": result["center_dfs"],
+                }
+
+                st.success(f"Saved {len(result['paths'])} center report file(s).")
+                st.caption(f"Folder: {report_out_dir}")
+
+            # ---- Preview block: uses session_state, not local vars ----
+            saved = st.session_state.center_report_result
+            if saved:
+                st.caption(f"Last generated folder: {saved['out_dir']}")
+                st.caption(f"Files: {len(saved['paths'])}")
+
+                show_preview = st.toggle(
+                    "Preview center outputs",
+                    value=True,
+                    key="center_report_preview",
+                )
+                if show_preview:
+                    picked_center = st.selectbox(
+                        "Preview a center",
+                        saved["centers"],
+                        key="center_report_center_pick",
+                    )
+                    st.dataframe(
+                        saved["center_dfs"][picked_center],
+                        width="stretch",
+                        hide_index=True,
+                    )
+            else:
+                st.info("Generate a center report to enable preview.")
+else:
+    st.info("Masters not found yet. Run the pipeline first.")
 
 # ============================
 # Post-processing: Center mapping (auto-run)

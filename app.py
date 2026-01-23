@@ -27,7 +27,10 @@ from scripts.center_mapping import (
     map_centers_for_nonclients,
     map_centers_for_clients,
 )
-
+from scripts.center_splitting import (
+    build_latest_attended_center_reports,
+    _to_date_series,
+)
 import matplotlib.pyplot as plt
 
 
@@ -87,6 +90,9 @@ if "output_paths" not in st.session_state:
 if "last_run_meta" not in st.session_state:
     # small dict with run directory paths, etc.
     st.session_state.last_run_meta = None
+
+if "center_report_dates" not in st.session_state:
+    st.session_state.center_report_dates = []
 
 
 # ============================
@@ -453,6 +459,113 @@ if att_master_path.exists() and ppl_master_path.exists():
     st.subheader("Client composition of attendees")
     render_and_close(fig_client_comp)
 
+
+else:
+    st.info("Masters not found yet. Run the pipeline first.")
+
+
+# ============================
+# Center reports (latest attended per person)
+# ============================
+st.divider()
+st.subheader("Center reports (Latest attended per person)")
+
+if att_master_path.exists() and ppl_master_path.exists():
+    # We already loaded these above for KPIs, but in case this section runs independently:
+    if "attendance_master_df" not in locals():
+        attendance_master_df = pd.read_csv(att_master_path)
+    if "people_master_df" not in locals():
+        people_master_df = pd.read_csv(ppl_master_path)
+
+    DATE_COL = "Webinar Date"
+    if DATE_COL not in attendance_master_df.columns:
+        st.error(f"attendance_master is missing '{DATE_COL}'.")
+    else:
+        _dates = _to_date_series(attendance_master_df[DATE_COL])
+        available_dates = sorted({d for d in _dates.dropna().tolist()})
+
+        if not available_dates:
+            st.info("No webinar dates found in attendance_master.")
+        else:
+            default_dates = st.session_state.center_report_dates or [
+                available_dates[-1]
+            ]
+
+            picked_dates = st.multiselect(
+                "Select webinar date(s) to include",
+                options=available_dates,
+                default=default_dates,
+                key="center_report_date_picker",
+                help="We keep only attended=True rows, then keep the latest date per person.",
+            )
+            st.session_state.center_report_dates = picked_dates
+
+            report_prefix = st.text_input(
+                "Output file prefix",
+                value="latest_attended_selected_dates",
+                key="center_report_prefix",
+            )
+
+            report_out_dir = base_path / "center_reports" / report_prefix
+            report_out_dir.mkdir(parents=True, exist_ok=True)
+
+            run_center_report_btn = st.button(
+                "Generate center report CSVs",
+                type="primary",
+                use_container_width=True,
+                key="center_report_generate_btn",
+            )
+
+            if run_center_report_btn:
+                if not picked_dates:
+                    st.error("Pick at least one webinar date.")
+                    st.stop()
+
+                with st.spinner("Building center reports..."):
+                    result = build_latest_attended_center_reports(
+                        attendance=attendance_master_df,
+                        people=people_master_df,
+                        include_dates=[str(d) for d in picked_dates],
+                        output_dir=report_out_dir,
+                        prefix=report_prefix,
+                        attendance_key="email_clean",
+                        attendance_date_col=DATE_COL,
+                        attendance_attended_col="Attended",  # keep your current
+                        final_center_col="Final Center",
+                    )
+
+                st.success(f"Saved {len(result['paths'])} center report file(s).")
+                st.caption(f"Folder: {report_out_dir}")
+
+            # ---- Preview from disk (no session_state needed) ----
+            st.divider()
+            st.markdown("### Preview saved center reports")
+
+            # Find CSVs matching the prefix
+            csvs = sorted(report_out_dir.glob(f"{report_prefix}_*.csv"))
+
+            if not csvs:
+                st.info("No center report CSVs found yet. Generate the report first.")
+            else:
+                # Show center names by stripping prefix_
+                def _label(p: Path) -> str:
+                    name = p.stem  # no .csv
+                    if name.startswith(report_prefix + "_"):
+                        return name[len(report_prefix) + 1 :]
+                    return name
+
+                center_options = {_label(p): p for p in csvs}
+                picked_center = st.selectbox(
+                    "Preview a center",
+                    options=sorted(center_options.keys()),
+                    key="center_report_center_pick",
+                )
+
+                preview_path = center_options[picked_center]
+                st.caption(f"File: {preview_path}")
+
+                preview_df = pd.read_csv(preview_path)
+                st.dataframe(preview_df, width="stretch", hide_index=True)
 
 else:
     st.info("Masters not found yet. Run the pipeline first.")

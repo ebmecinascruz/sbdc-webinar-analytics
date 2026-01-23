@@ -68,10 +68,11 @@ FINAL RESULT
 
 - `WebinarApp.exe` launches Streamlit locally
 - Browser opens automatically
-- App shuts down cleanly when browser closes
+- App shuts down cleanly when pressing `Quit` button
 - All CSV outputs persist to disk
-- KPIs update incrementally
+- KPIs updated using master files
 - Graphs and maps are saved & overwritten cleanly
+- Center reports split attendees by centers
 - Tested on bare-bones Windows machines
 
 ------------------------------------------------------------
@@ -84,7 +85,8 @@ CORE DESIGN PRINCIPLES
 4. Master tables are append-only with deduplication
 5. KPIs are computed from masters, not per-session
 6. Plots are generated once and saved
-7. New runs never corrupt prior logic
+7. Center splits are generated from master files.
+8. New runs never corrupt prior logic
 
 ------------------------------------------------------------
 FINAL SHIPPED FOLDER STRUCTURE
@@ -160,6 +162,28 @@ The application produces two separate geographic maps to support center-level an
 **2. Non-Client Center Assignment Map**
 - Includes attendees not matched to existing clients
 - Points (Zip codes) are color-coded by assignment to nearest center
+
+### Center Reports (Latest Attended per Person)
+
+The application generates **center-specific attendee reports** to support operational follow-up and outreach.
+
+These reports:
+- are derived from `attendance_master.csv` and `people_master.csv`
+- include **only attendees**
+- deduplicate to **one record per person**
+- retain the **most recent webinar attended** when multiple dates are selected
+- assign a **final center** (client → NeoSerra center, non-client → ZIP-based center)
+
+Outputs are written to disk as one CSV per center:
+
+```
+center_reports/
+<report_prefix>/
+<report_prefix>_<Center Name>.csv
+```
+
+Reports are persisted and previewed directly from disk to ensure stability across app reruns and restarts.
+
 
 
 ------------------------------------------------------------

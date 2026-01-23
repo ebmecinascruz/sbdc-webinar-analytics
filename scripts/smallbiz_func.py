@@ -9,6 +9,7 @@ from scripts.attendance_cleaning import (
     split_invalid_emails_from_clean,
 )
 from scripts.columns import WEBINAR_KEEP_COLS
+from scripts.webinar_cleaning import ensure_state_from_zip
 
 
 def detect_zoom_header_skiprows(
@@ -64,6 +65,8 @@ def process_zoom_attendance_file_full(
 
     df = pd.read_csv(file_path, skiprows=skiprows, index_col=False)
 
+    # add missing column
+    df = ensure_state_from_zip(df)
     # Keep only columns that exist (Zoom changes headers sometimes)
     keep = [c for c in webinar_keep_cols if c in df.columns]
     out = df[keep].copy()

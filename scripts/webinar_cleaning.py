@@ -1,69 +1,62 @@
-# Importing necessary packages
 import pandas as pd
+import pgeocode
 
-from scripts.name_cleaning import _clean_spaces, clean_name
+from scripts.zip_codes import clean_zip_5
 
 
-def add_email_clean(
+def ensure_state_from_zip(
     df: pd.DataFrame,
-    email_col: str = "Email",
-    out_col: str = "email_clean",
+    *,
+    raw_zip_col: str = "Zip/Postal Code",
+    zip_col: str = "zip_clean",
+    state_col: str = "State/Province",
+    country: str = "US",
 ) -> pd.DataFrame:
-    """
-    Adds a standardized email column for matching:
-    - strip whitespace
-    - lowercase
-    - blank -> NA
-    Keeps all original columns.
-    """
-    out = df.copy()
-    out[out_col] = out[email_col].astype(str).str.strip().str.lower().replace("", pd.NA)
-    return out
-
-
-def add_full_name(
-    df: pd.DataFrame,
-    first_col: str = "First Name",
-    last_col: str = "Last Name",
-) -> pd.DataFrame:
-    """
-    Adds:
-    - full_name: human-readable combined name
-    - full_name_clean: canonical cleaned version for matching
-
-    Uses the shared clean_name() function so webinar and NeoSerra
-    names live in the same normalized space.
-    """
     out = df.copy()
 
-    # human-readable (light cleaning only)
-    first_raw = (
-        _clean_spaces(out[first_col])
-        if first_col in out.columns
-        else pd.Series("", index=out.index)
+    # 🔹 always normalize ZIPs first
+    out = clean_zip_5(out, raw_zip_col=raw_zip_col, out_col=zip_col)
+
+    # If state exists and has values, we're done
+    if state_col in out.columns and out[state_col].notna().any():
+        return out
+
+    if state_col not in out.columns:
+        out[state_col] = pd.NA
+
+    unique_zips = out[zip_col].dropna().drop_duplicates().tolist()
+    if not unique_zips:
+        return out
+
+    nomi = pgeocode.Nominatim(country)
+    ref = nomi.query_postal_code(unique_zips).reset_index()
+
+    if "postal_code" not in ref.columns and "index" in ref.columns:
+        ref = ref.rename(columns={"index": "postal_code"})
+
+    ref = ref.rename(
+        columns={
+            "postal_code": "zip_clean",
+            "state_code": "state_code",
+        }
     )
-    last_raw = (
-        _clean_spaces(out[last_col])
-        if last_col in out.columns
-        else pd.Series("", index=out.index)
+    ref["zip_clean"] = ref["zip_clean"].astype("string").str.zfill(5)
+
+    out = out.merge(
+        ref[["zip_clean", "state_code"]],
+        how="left",
+        on="zip_clean",
     )
 
-    out["full_name"] = _clean_spaces((first_raw + " " + last_raw).str.strip())
-    out.loc[out["full_name"] == "", "full_name"] = pd.NA
+    out[state_col] = (
+        out[state_col]
+        .astype("string")
+        .where(
+            out[state_col].notna() & (out[state_col].str.strip() != ""),
+            out["state_code"],
+        )
+        .str.upper()
+    )
 
-    # canonical matching key
-    out["full_name_clean"] = out["full_name"].map(clean_name).replace("", pd.NA)
-
-    return out
-
-
-def prepare_webinar_df(
-    df: pd.DataFrame,
-    first_col: str = "First Name",
-    last_col: str = "Last Name",
-    email_col: str = "Email",
-) -> pd.DataFrame:
-    out = add_full_name(df, first_col=first_col, last_col=last_col)
-    out = add_email_clean(out, email_col=email_col)
-
+    out = out.drop(columns=["state_code"], errors="ignore")
     return out

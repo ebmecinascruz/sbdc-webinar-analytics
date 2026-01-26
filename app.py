@@ -241,465 +241,500 @@ with st.sidebar:
 # ============================
 # Main: Guided status
 # ============================
-ready = bool(webinar_files and neoserra_file)
+st.divider()
 
-with st.container(border=True):
-    st.subheader("How this works")
-    a, b, c, d = st.columns(4)
-    a.markdown("**1. Upload**")
-    a.caption("Webinar file(s) + NeoSerra + Centers")
-    b.markdown("**2. Run**")
-    b.caption("Matches each webinar to NeoSerra")
-    c.markdown("**3. Update masters**")
-    c.caption("People + attendance master CSVs")
-    d.markdown("**4. Review**")
-    d.caption("Invalid emails, collisions, enriched deltas")
+tab_run, tab_kpis, tab_reports, tab_maps, tab_review = st.tabs(
+    ["Run Pipeline", "Dashboard (KPIs)", "Center Reports", "Maps", "Batch + Review"]
+)
 
-    if ready:
-        st.success(f"Ready. {len(webinar_files)} webinar file(s) uploaded.")
-    else:
-        st.info("Upload **NeoSerra** and at least **one webinar file** in the sidebar.")
-
-
-# ============================
-# Run (batch) — stores results into session_state
-# ============================
-if run_btn:
-    if not ready:
-        st.error("Please upload NeoSerra, centers, and at least one webinar file.")
-        st.stop()
-
-    run_dir = base_path / "_runs"
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    neoserra_path = _write_upload_to_disk(neoserra_file, run_dir / neoserra_file.name)
-    # Centers: use bundled by default, but allow override upload
-    if centers_file is not None:
-        centers_path = _write_upload_to_disk(centers_file, run_dir / centers_file.name)
-    else:
-        centers_path = CENTERS_PATH
-        if not centers_path.exists():
-            st.error(f"Bundled centers.csv not found at: {centers_path}")
-            st.stop()
-
-    # Reset stored batch results (new run)
-    st.session_state.batch_df = None
-    st.session_state.success_runs = []
-    st.session_state.output_paths = []
-    st.session_state.last_run_meta = {
-        "base_dir": str(base_path),
-        "run_dir": str(run_dir),
-        "neoserra_path": str(neoserra_path),
-        "centers_path": str(centers_path),
-        "people_master_path": str(people_master_path),
-        "attendance_master_path": str(attendance_master_path),
-        "cache_path": str(cache_path),
-    }
+# -------------------------
+# TAB 1: Run Pipeline
+# -------------------------
+with tab_run:
+    st.subheader("Run pipeline")
+    ready = bool(webinar_files and neoserra_file)
 
     with st.container(border=True):
-        st.subheader("Run plan")
-        colL, colR = st.columns(2)
-        with colL:
-            st.markdown("**Inputs**")
-            st.code(str(neoserra_path), language=None)
-            st.code(str(centers_path), language=None)
-        with colR:
-            st.markdown("**Outputs**")
-            st.code(str(Path(people_master_path)), language=None)
-            st.code(str(Path(attendance_master_path)), language=None)
-            st.code(str(Path(cache_path)), language=None)
+        st.subheader("How this works")
+        a, b, c, d = st.columns(4)
+        a.markdown("**1. Upload**")
+        a.caption("Webinar file(s) + NeoSerra + Centers")
+        b.markdown("**2. Run**")
+        b.caption("Matches each webinar to NeoSerra")
+        c.markdown("**3. Update masters**")
+        c.caption("People + attendance master CSVs")
+        d.markdown("**4. Review**")
+        d.caption("Invalid emails, collisions, enriched deltas")
 
-    st.subheader("Batch run")
+        if ready:
+            st.success(f"Ready. {len(webinar_files)} webinar file(s) uploaded.")
+        else:
+            st.info(
+                "Upload **NeoSerra** and at least **one webinar file** in the sidebar."
+            )
 
-    progress = st.progress(0.0)
-    status = st.empty()
+    # ============================
+    # Run (batch) — stores results into session_state
+    # ============================
+    if run_btn:
+        if not ready:
+            st.error("Please upload NeoSerra, centers, and at least one webinar file.")
+            st.stop()
 
-    batch_rows: list[dict] = []
-    output_paths: list[Path] = []
+        run_dir = base_path / "_runs"
+        run_dir.mkdir(parents=True, exist_ok=True)
 
-    total = len(webinar_files)
+        neoserra_path = _write_upload_to_disk(
+            neoserra_file, run_dir / neoserra_file.name
+        )
+        # Centers: use bundled by default, but allow override upload
+        if centers_file is not None:
+            centers_path = _write_upload_to_disk(
+                centers_file, run_dir / centers_file.name
+            )
+        else:
+            centers_path = CENTERS_PATH
+            if not centers_path.exists():
+                st.error(f"Bundled centers.csv not found at: {centers_path}")
+                st.stop()
 
-    for i, wf in enumerate(webinar_files, start=1):
-        meta = _parse_webinar_filename(wf.name)
-        label_bits = [wf.name]
-        if meta["ok"]:
-            label_bits.append(f"(id={meta['webinar_id']} date={meta['webinar_date']})")
+        # Reset stored batch results (new run)
+        st.session_state.batch_df = None
+        st.session_state.success_runs = []
+        st.session_state.output_paths = []
+        st.session_state.last_run_meta = {
+            "base_dir": str(base_path),
+            "run_dir": str(run_dir),
+            "neoserra_path": str(neoserra_path),
+            "centers_path": str(centers_path),
+            "people_master_path": str(people_master_path),
+            "attendance_master_path": str(attendance_master_path),
+            "cache_path": str(cache_path),
+        }
 
-        status.info(f"Running {i}/{total}: " + " ".join(label_bits))
+        with st.container(border=True):
+            st.subheader("Run plan")
+            colL, colR = st.columns(2)
+            with colL:
+                st.markdown("**Inputs**")
+                st.code(str(neoserra_path), language=None)
+                st.code(str(centers_path), language=None)
+            with colR:
+                st.markdown("**Outputs**")
+                st.code(str(Path(people_master_path)), language=None)
+                st.code(str(Path(attendance_master_path)), language=None)
+                st.code(str(Path(cache_path)), language=None)
 
-        try:
-            webinar_path = _write_upload_to_disk(wf, run_dir / wf.name)
-            output_path = base_path / (Path(wf.name).stem + "_with_neoserra.csv")
+        st.subheader("Batch run")
 
-            # skip if exists and not overwriting
-            if output_path.exists() and not overwrite_outputs:
+        progress = st.progress(0.0)
+        status = st.empty()
+
+        batch_rows: list[dict] = []
+        output_paths: list[Path] = []
+
+        total = len(webinar_files)
+
+        for i, wf in enumerate(webinar_files, start=1):
+            meta = _parse_webinar_filename(wf.name)
+            label_bits = [wf.name]
+            if meta["ok"]:
+                label_bits.append(
+                    f"(id={meta['webinar_id']} date={meta['webinar_date']})"
+                )
+
+            status.info(f"Running {i}/{total}: " + " ".join(label_bits))
+
+            try:
+                webinar_path = _write_upload_to_disk(wf, run_dir / wf.name)
+                output_path = base_path / (Path(wf.name).stem + "_with_neoserra.csv")
+
+                # skip if exists and not overwriting
+                if output_path.exists() and not overwrite_outputs:
+                    batch_rows.append(
+                        {
+                            "webinar_file": wf.name,
+                            "webinar_id": meta.get("webinar_id"),
+                            "webinar_date": meta.get("webinar_date"),
+                            "status": "skipped (output exists)",
+                            "output_csv": str(output_path),
+                        }
+                    )
+                    output_paths.append(output_path)
+                    progress.progress(i / total)
+                    continue
+
+                with st.spinner(f"Processing: {wf.name}"):
+                    results = run_webinar_neoserra_match(
+                        webinar_file=webinar_path,
+                        neoserra_file=neoserra_path,
+                        centers_file=centers_path,
+                        output_path=output_path,
+                        people_master_path=people_master_path,
+                        attendance_master_path=attendance_master_path,
+                        cache_path=cache_path,
+                        print_summary=False,
+                    )
+
+                summary = results["summary"]
+
+                # store per-run review artifacts in session_state
+                st.session_state.success_runs.append(
+                    {
+                        "webinar_file": wf.name,
+                        "output_path": str(output_path),
+                        "summary": summary,
+                        "results": {
+                            "webinar_invalid_emails": results.get(
+                                "webinar_invalid_emails"
+                            ),
+                            "people_name_collision_df": results.get(
+                                "people_name_collision_df"
+                            ),
+                            "people_enriched_before": results.get(
+                                "people_enriched_before"
+                            ),
+                            "people_enriched_after": results.get(
+                                "people_enriched_after"
+                            ),
+                        },
+                    }
+                )
+
                 batch_rows.append(
                     {
                         "webinar_file": wf.name,
                         "webinar_id": meta.get("webinar_id"),
                         "webinar_date": meta.get("webinar_date"),
-                        "status": "skipped (output exists)",
+                        "status": "ok",
+                        "session_rows": getattr(summary, "session_rows", None),
+                        "unique_emails": getattr(
+                            summary, "session_unique_emails", None
+                        ),
+                        "attendance_added": getattr(summary, "attendance_added", None),
+                        "attendance_overwritten": getattr(
+                            summary, "attendance_overwritten", None
+                        ),
+                        "people_new": getattr(summary, "people_new", None),
+                        "people_enriched": getattr(summary, "people_enriched", None),
                         "output_csv": str(output_path),
                     }
                 )
-                output_paths.append(output_path)
-                progress.progress(i / total)
-                continue
 
-            with st.spinner(f"Processing: {wf.name}"):
-                results = run_webinar_neoserra_match(
-                    webinar_file=webinar_path,
-                    neoserra_file=neoserra_path,
-                    centers_file=centers_path,
-                    output_path=output_path,
-                    people_master_path=people_master_path,
-                    attendance_master_path=attendance_master_path,
-                    cache_path=cache_path,
-                    print_summary=False,
+                output_paths.append(output_path)
+
+            except Exception as e:
+                batch_rows.append(
+                    {
+                        "webinar_file": wf.name,
+                        "webinar_id": meta.get("webinar_id"),
+                        "webinar_date": meta.get("webinar_date"),
+                        "status": f"error: {type(e).__name__}",
+                        "error": str(e),
+                    }
                 )
 
-            summary = results["summary"]
+                if not continue_on_error:
+                    status.error(f"Stopped on error ({wf.name}): {e}")
+                    break
 
-            # store per-run review artifacts in session_state
-            st.session_state.success_runs.append(
-                {
-                    "webinar_file": wf.name,
-                    "output_path": str(output_path),
-                    "summary": summary,
-                    "results": {
-                        "webinar_invalid_emails": results.get("webinar_invalid_emails"),
-                        "people_name_collision_df": results.get(
-                            "people_name_collision_df"
-                        ),
-                        "people_enriched_before": results.get("people_enriched_before"),
-                        "people_enriched_after": results.get("people_enriched_after"),
-                    },
-                }
-            )
+            progress.progress(i / total)
 
-            batch_rows.append(
-                {
-                    "webinar_file": wf.name,
-                    "webinar_id": meta.get("webinar_id"),
-                    "webinar_date": meta.get("webinar_date"),
-                    "status": "ok",
-                    "session_rows": getattr(summary, "session_rows", None),
-                    "unique_emails": getattr(summary, "session_unique_emails", None),
-                    "attendance_added": getattr(summary, "attendance_added", None),
-                    "attendance_overwritten": getattr(
-                        summary, "attendance_overwritten", None
-                    ),
-                    "people_new": getattr(summary, "people_new", None),
-                    "people_enriched": getattr(summary, "people_enriched", None),
-                    "output_csv": str(output_path),
-                }
-            )
+        status.success("Batch complete.")
 
-            output_paths.append(output_path)
+        st.session_state.batch_df = pd.DataFrame(batch_rows)
+        st.session_state.output_paths = [str(p) for p in output_paths]
 
-        except Exception as e:
-            batch_rows.append(
-                {
-                    "webinar_file": wf.name,
-                    "webinar_id": meta.get("webinar_id"),
-                    "webinar_date": meta.get("webinar_date"),
-                    "status": f"error: {type(e).__name__}",
-                    "error": str(e),
-                }
-            )
-
-            if not continue_on_error:
-                status.error(f"Stopped on error ({wf.name}): {e}")
-                break
-
-        progress.progress(i / total)
-
-    status.success("Batch complete.")
-
-    st.session_state.batch_df = pd.DataFrame(batch_rows)
-    st.session_state.output_paths = [str(p) for p in output_paths]
-
-
-# ============================
-# Render stored batch results (persists across reruns)
-# ============================
-batch_df = st.session_state.batch_df
-success_runs = st.session_state.success_runs
-stored_output_paths = (
-    [Path(p) for p in st.session_state.output_paths]
-    if st.session_state.output_paths
-    else []
-)
-
-# ---- KPI summary (computed ONCE from disk masters) ----
-st.divider()
-st.subheader("Webinar KPIs (overall)")
-
-att_master_path = Path(attendance_master_path)
-ppl_master_path = Path(people_master_path)
-
-if att_master_path.exists() and ppl_master_path.exists():
-    attendance_master_df = pd.read_csv(att_master_path)
-    people_master_df = pd.read_csv(ppl_master_path)
-
-    kpi_out_dir_path = base_path / "kpis"
-    kpi_out_dir_path.mkdir(parents=True, exist_ok=True)
-
-    webinar_kpis = generate_webinar_kpis(
-        attendance=attendance_master_df,
-        out_dir=kpi_out_dir_path,
-        people_master=people_master_df,
+    # ============================
+    # Render stored batch results (persists across reruns)
+    # ============================
+    batch_df = st.session_state.batch_df
+    success_runs = st.session_state.success_runs
+    stored_output_paths = (
+        [Path(p) for p in st.session_state.output_paths]
+        if st.session_state.output_paths
+        else []
     )
 
-    st.caption(f"Saved: {kpi_out_dir_path / 'webinar_kpis.csv'}")
-    st.dataframe(webinar_kpis, width="stretch")
+# -------------------------
+# TAB 2: KPIs Dashboard
+# -------------------------
+with tab_kpis:
+    st.subheader("Webinar KPIs (overall)")
 
-    # Figures
-    df_plot = prepare_webinar_kpis_for_plotting(webinar_kpis, window=4)
-    style = get_default_plot_style()
+    attendance_master_df, people_master_df = _load_masters(
+        people_master_path, attendance_master_path
+    )
 
-    fig_counts, _ = make_attendance_counts_figure(df_plot, window=4, style=style)
-    fig_rate, _ = make_engagement_rate_figure(df_plot, window=4, style=style)
-
-    fig_audience, _ = plot_audience_participation_stacked(webinar_kpis, style=style)
-    fig_comp, _ = plot_attendance_composition(webinar_kpis, style=style)
-    fig_client_comp, _ = plot_client_composition_per_webinar(webinar_kpis, style=style)
-
-    # Save figures
-    plots_dir = kpi_out_dir_path / "plots"
-    plots_dir.mkdir(exist_ok=True)
-
-    save_fig_overwrite(fig_counts, plots_dir / "attendance_counts.png")
-    save_fig_overwrite(fig_rate, plots_dir / "engagement_rate.png")
-    save_fig_overwrite(fig_audience, plots_dir / "audience_participation.png")
-    save_fig_overwrite(fig_comp, plots_dir / "attendance_composition.png")
-    save_fig_overwrite(fig_client_comp, plots_dir / "client_composition.png")
-
-    st.caption(f"Saved: {kpi_out_dir_path / 'plots' / 'webinar_kpis.csv'}")
-
-    st.subheader("Attendance over time")
-    render_and_close(fig_counts)
-
-    st.subheader("Engagement rate")
-    render_and_close(fig_rate)
-
-    st.subheader("Audience participation (Total audience split)")
-    render_and_close(fig_audience)
-
-    st.subheader("Attendee composition (First-time vs Repeat)")
-    render_and_close(fig_comp)
-
-    st.subheader("Client composition of attendees")
-    render_and_close(fig_client_comp)
-
-
-else:
-    st.info("Masters not found yet. Run the pipeline first.")
-
-
-# ============================
-# Center reports (latest attended per person)
-# ============================
-st.divider()
-st.subheader("Center reports (Latest attended per person)")
-
-if att_master_path.exists() and ppl_master_path.exists():
-    if "attendance_master_df" not in locals():
-        attendance_master_df = pd.read_csv(att_master_path)
-    if "people_master_df" not in locals():
-        people_master_df = pd.read_csv(ppl_master_path)
-
-    DATE_COL = "Webinar Date"
-    if DATE_COL not in attendance_master_df.columns:
-        st.error(f"attendance_master is missing '{DATE_COL}'.")
+    if attendance_master_df is None or people_master_df is None:
+        st.info("Masters not found yet. Run the pipeline first.")
     else:
-        _dates = _to_date_series(attendance_master_df[DATE_COL])
-        available_dates = sorted({d for d in _dates.dropna().tolist()})
+        kpi_out_dir_path = base_path / "kpis"
+        kpi_out_dir_path.mkdir(parents=True, exist_ok=True)
 
-        if not available_dates:
-            st.info("No webinar dates found in attendance_master.")
+        webinar_kpis = generate_webinar_kpis(
+            attendance=attendance_master_df,
+            out_dir=kpi_out_dir_path,
+            people_master=people_master_df,
+        )
+
+        st.caption(f"Saved: {kpi_out_dir_path / 'webinar_kpis.csv'}")
+        st.dataframe(webinar_kpis, width="stretch")
+
+        # Figures
+        df_plot = prepare_webinar_kpis_for_plotting(webinar_kpis, window=4)
+        style = get_default_plot_style()
+
+        fig_counts, _ = make_attendance_counts_figure(df_plot, window=4, style=style)
+        fig_rate, _ = make_engagement_rate_figure(df_plot, window=4, style=style)
+
+        fig_audience, _ = plot_audience_participation_stacked(webinar_kpis, style=style)
+        fig_comp, _ = plot_attendance_composition(webinar_kpis, style=style)
+        fig_client_comp, _ = plot_client_composition_per_webinar(
+            webinar_kpis, style=style
+        )
+
+        # Save figures
+        plots_dir = kpi_out_dir_path / "plots"
+        plots_dir.mkdir(exist_ok=True)
+
+        save_fig_overwrite(fig_counts, plots_dir / "attendance_counts.png")
+        save_fig_overwrite(fig_rate, plots_dir / "engagement_rate.png")
+        save_fig_overwrite(fig_audience, plots_dir / "audience_participation.png")
+        save_fig_overwrite(fig_comp, plots_dir / "attendance_composition.png")
+        save_fig_overwrite(fig_client_comp, plots_dir / "client_composition.png")
+
+        st.caption(f"Saved: {kpi_out_dir_path / 'plots' / 'webinar_kpis.csv'}")
+
+        st.subheader("Attendance over time")
+        render_and_close(fig_counts)
+
+        st.subheader("Engagement rate")
+        render_and_close(fig_rate)
+
+        st.subheader("Audience participation (Total audience split)")
+        render_and_close(fig_audience)
+
+        st.subheader("Attendee composition (First-time vs Repeat)")
+        render_and_close(fig_comp)
+
+        st.subheader("Client composition of attendees")
+        render_and_close(fig_client_comp)
+
+# -------------------------
+# TAB 3: Center Reports
+# -------------------------
+with tab_reports:
+    st.subheader("Center reports (Latest attended per person)")
+
+    attendance_master_df, people_master_df = _load_masters(
+        people_master_path, attendance_master_path
+    )
+
+    if attendance_master_df is None or people_master_df is None:
+        st.info("Masters not found yet. Run the pipeline first.")
+    else:
+        DATE_COL = "Webinar Date"
+        if DATE_COL not in attendance_master_df.columns:
+            st.error(f"attendance_master is missing '{DATE_COL}'.")
         else:
-            default_dates = _safe_multiselect_defaults(
-                options=available_dates,
-                desired=st.session_state.get("center_report_dates"),
-                fallback="last",  # or "first"
-            )
-            picked_dates = st.multiselect(
-                "Select webinar date(s) to include",
-                options=available_dates,
-                default=default_dates,
-                key="center_report_date_picker",
-                help="We keep only attended=True rows, then keep the latest date per person.",
-            )
-            st.session_state.center_report_dates = picked_dates
+            _dates = _to_date_series(attendance_master_df[DATE_COL])
+            available_dates = sorted({d for d in _dates.dropna().tolist()})
 
-            report_prefix = st.text_input(
-                "Output file prefix",
-                value="latest_attended_selected_dates",
-                key="center_report_prefix",
-            )
+            if not available_dates:
+                st.info("No webinar dates found in attendance_master.")
+            else:
+                default_dates = _safe_multiselect_defaults(
+                    options=available_dates,
+                    desired=st.session_state.get("center_report_dates"),
+                    fallback="last",  # or "first"
+                )
+                picked_dates = st.multiselect(
+                    "Select webinar date(s) to include",
+                    options=available_dates,
+                    default=default_dates,
+                    key="center_report_date_picker",
+                    help="We keep only attended=True rows, then keep the latest date per person.",
+                )
+                st.session_state.center_report_dates = picked_dates
 
-            report_out_dir = base_path / "center_reports" / report_prefix
-            report_out_dir.mkdir(parents=True, exist_ok=True)
+                report_prefix = st.text_input(
+                    "Output file prefix",
+                    value="latest_attended_selected_dates",
+                    key="center_report_prefix",
+                )
 
-            run_center_report_btn = st.button(
-                "Generate center report CSVs",
-                type="primary",
-                use_container_width=True,
-                key="center_report_generate_btn",
-            )
+                report_out_dir = base_path / "center_reports" / report_prefix
+                report_out_dir.mkdir(parents=True, exist_ok=True)
 
-            if run_center_report_btn:
-                if not picked_dates:
-                    st.error("Pick at least one webinar date.")
-                    st.stop()
+                run_center_report_btn = st.button(
+                    "Generate center report CSVs",
+                    type="primary",
+                    use_container_width=True,
+                    key="center_report_generate_btn",
+                )
 
-                with st.spinner("Building center reports..."):
-                    result = build_latest_attended_center_reports(
-                        attendance=attendance_master_df,
-                        people=people_master_df,
-                        include_dates=[str(d) for d in picked_dates],
-                        output_dir=report_out_dir,
-                        prefix=report_prefix,
-                        attendance_key="email_clean",
-                        attendance_date_col=DATE_COL,
-                        attendance_attended_col="Attended",
-                        final_center_col="Final Center",
+                if run_center_report_btn:
+                    if not picked_dates:
+                        st.error("Pick at least one webinar date.")
+                        st.stop()
+
+                    with st.spinner("Building center reports..."):
+                        result = build_latest_attended_center_reports(
+                            attendance=attendance_master_df,
+                            people=people_master_df,
+                            include_dates=[str(d) for d in picked_dates],
+                            output_dir=report_out_dir,
+                            prefix=report_prefix,
+                            attendance_key="email_clean",
+                            attendance_date_col=DATE_COL,
+                            attendance_attended_col="Attended",
+                            final_center_col="Final Center",
+                        )
+
+                    st.success(f"Saved {len(result['paths'])} center report file(s).")
+                    st.caption(f"Folder: {report_out_dir}")
+
+                # ---- Preview from disk (no session_state needed) ----
+                st.divider()
+                st.markdown("### Preview saved center reports")
+
+                # Find CSVs matching the prefix
+                csvs = sorted(report_out_dir.glob(f"{report_prefix}_*.csv"))
+
+                if not csvs:
+                    st.info(
+                        "No center report CSVs found yet. Generate the report first."
+                    )
+                else:
+                    # Show center names by stripping prefix_
+                    def _label(p: Path) -> str:
+                        name = p.stem  # no .csv
+                        if name.startswith(report_prefix + "_"):
+                            return name[len(report_prefix) + 1 :]
+                        return name
+
+                    center_options = {_label(p): p for p in csvs}
+                    picked_center = st.selectbox(
+                        "Preview a center",
+                        options=sorted(center_options.keys()),
+                        key="center_report_center_pick",
                     )
 
-                st.success(f"Saved {len(result['paths'])} center report file(s).")
-                st.caption(f"Folder: {report_out_dir}")
+                    preview_path = center_options[picked_center]
+                    st.caption(f"File: {preview_path}")
 
-            # ---- Preview from disk (no session_state needed) ----
-            st.divider()
-            st.markdown("### Preview saved center reports")
-
-            # Find CSVs matching the prefix
-            csvs = sorted(report_out_dir.glob(f"{report_prefix}_*.csv"))
-
-            if not csvs:
-                st.info("No center report CSVs found yet. Generate the report first.")
-            else:
-                # Show center names by stripping prefix_
-                def _label(p: Path) -> str:
-                    name = p.stem  # no .csv
-                    if name.startswith(report_prefix + "_"):
-                        return name[len(report_prefix) + 1 :]
-                    return name
-
-                center_options = {_label(p): p for p in csvs}
-                picked_center = st.selectbox(
-                    "Preview a center",
-                    options=sorted(center_options.keys()),
-                    key="center_report_center_pick",
-                )
-
-                preview_path = center_options[picked_center]
-                st.caption(f"File: {preview_path}")
-
-                preview_df = pd.read_csv(preview_path)
-                st.dataframe(preview_df, width="stretch", hide_index=True)
-
-else:
-    st.info("Masters not found yet. Run the pipeline first.")
+                    preview_df = pd.read_csv(preview_path)
+                    st.dataframe(preview_df, width="stretch", hide_index=True)
 
 
-# ============================
-# Post-processing: Center mapping (auto-run)
-# ============================
-st.divider()
-st.subheader("Center mapping (clients vs non-clients)")
+# -------------------------
+# TAB 4: Maps
+# -------------------------
+with tab_maps:
+    st.subheader("Center mapping (clients vs non-clients)")
 
-meta = st.session_state.last_run_meta
-if not meta:
-    st.info("Run the pipeline first so inputs are available for post-processing.")
-else:
-    neoserra_path = Path(meta["neoserra_path"])
-    centers_path = Path(meta["centers_path"])
-    cache_path = Path(meta["cache_path"])
+    meta = st.session_state.last_run_meta
+    attendance_master_df, people_master_df = _load_masters(
+        people_master_path, attendance_master_path
+    )
 
-    if not neoserra_path.exists():
-        st.info("NeoSerra file not found yet. Run the pipeline first.")
-    elif not centers_path.exists():
-        st.error(f"Centers file not found: {centers_path}")
+    if not meta:
+        st.info("Run the pipeline first so inputs are available for post-processing.")
+    elif people_master_df is None:
+        st.info("Masters not found yet. Run the pipeline first.")
     else:
-        # Load inputs
-        neoserra_raw_df = pd.read_csv(neoserra_path)
-        centers_df = pd.read_csv(centers_path)
+        neoserra_path = Path(meta["neoserra_path"])
+        centers_path = Path(meta["centers_path"])
+        cache_path = Path(meta["cache_path"])
 
-        zip_lookup_df = None
-        if cache_path.exists():
-            zip_lookup_df = pd.read_csv(cache_path)
+        if not neoserra_path.exists():
+            st.info("NeoSerra file not found yet. Run the pipeline first.")
+        elif not centers_path.exists():
+            st.error(f"Centers file not found: {centers_path}")
+        else:
+            neoserra_raw_df = pd.read_csv(neoserra_path)
+            centers_df = pd.read_csv(centers_path)
 
-        map_out_dir = base_path / "center_mapping"
-        map_out_dir.mkdir(parents=True, exist_ok=True)
+            zip_lookup_df = pd.read_csv(cache_path) if cache_path.exists() else None
 
-        out_nonclients_html = map_out_dir / "nonclients_zip_footprint.html"
-        out_clients_html = map_out_dir / "clients_zip_footprint.html"
+            map_out_dir = base_path / "center_mapping"
+            map_out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Auto-run mapping every time this section is reached
-        with st.spinner("Generating non-client ZIP footprint map..."):
-            _nonclients_html_path, _ = map_centers_for_nonclients(
-                people_master_df=people_master_df,
-                centers_df=centers_df,
-                zip_lookup_df=zip_lookup_df,  # ok if None
-                raw_zip_col="Zip/Postal Code",
-                out_html=out_nonclients_html,
-            )
+            out_nonclients_html = map_out_dir / "nonclients_zip_footprint.html"
+            out_clients_html = map_out_dir / "clients_zip_footprint.html"
 
-        with st.spinner("Generating client ZIP footprint map..."):
-            _clients_html_path = map_centers_for_clients(
-                neoserra_df=neoserra_raw_df,
-                raw_zip_col="Physical Address ZIP Code",
-                out_html=out_clients_html,
-            )
+            # KEY improvement: don't auto-run unless user clicks
+            if st.button("Generate maps", type="primary", use_container_width=True):
+                with st.spinner("Generating non-client ZIP footprint map..."):
+                    map_centers_for_nonclients(
+                        people_master_df=people_master_df,
+                        centers_df=centers_df,
+                        zip_lookup_df=zip_lookup_df,
+                        raw_zip_col="Zip/Postal Code",
+                        out_html=out_nonclients_html,
+                    )
 
-        st.success("Center maps generated and saved.")
-        st.caption(f"Saved: {out_nonclients_html}")
-        st.caption(f"Saved: {out_clients_html}")
+                with st.spinner("Generating client ZIP footprint map..."):
+                    map_centers_for_clients(
+                        neoserra_df=neoserra_raw_df,
+                        raw_zip_col="Physical Address ZIP Code",
+                        out_html=out_clients_html,
+                    )
 
-        show_prev = st.toggle("Preview latest maps", value=True)
-        if show_prev:
-            if out_nonclients_html.exists():
-                st.markdown("### Non-clients ZIP footprint")
-                st.components.v1.html(
-                    out_nonclients_html.read_text(encoding="utf-8"),
-                    height=650,
-                )
+                st.success("Center maps generated and saved.")
 
-            if out_clients_html.exists():
-                st.markdown("### Clients ZIP footprint")
-                st.components.v1.html(
-                    out_clients_html.read_text(encoding="utf-8"),
-                    height=650,
-                )
+            show_prev = st.toggle("Preview latest maps", value=True)
+            if show_prev:
+                if out_nonclients_html.exists():
+                    st.markdown("### Non-clients ZIP footprint")
+                    st.components.v1.html(
+                        out_nonclients_html.read_text(encoding="utf-8"), height=650
+                    )
+                else:
+                    st.info("Non-client map not generated yet.")
+
+                if out_clients_html.exists():
+                    st.markdown("### Clients ZIP footprint")
+                    st.components.v1.html(
+                        out_clients_html.read_text(encoding="utf-8"), height=650
+                    )
+                else:
+                    st.info("Client map not generated yet.")
 
 
-if batch_df is not None:
-    st.divider()
-    st.subheader("Batch results")
+# -------------------------
+# TAB 5: Batch + Review
+# -------------------------
+with tab_review:
+    st.subheader("Batch results + review")
 
-    ok_count = (
-        int((batch_df["status"] == "ok").sum()) if "status" in batch_df.columns else 0
-    )
-    err_count = (
-        int(batch_df["status"].astype(str).str.startswith("error").sum())
-        if "status" in batch_df.columns
-        else 0
-    )
-    skip_count = (
-        int(batch_df["status"].astype(str).str.startswith("skipped").sum())
-        if "status" in batch_df.columns
-        else 0
-    )
+    if batch_df is None:
+        st.info("No batch results yet. Run the pipeline first.")
+    else:
+        ok_count = (
+            int((batch_df["status"] == "ok").sum())
+            if "status" in batch_df.columns
+            else 0
+        )
+        err_count = (
+            int(batch_df["status"].astype(str).str.startswith("error").sum())
+            if "status" in batch_df.columns
+            else 0
+        )
+        skip_count = (
+            int(batch_df["status"].astype(str).str.startswith("skipped").sum())
+            if "status" in batch_df.columns
+            else 0
+        )
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Succeeded", f"{ok_count:,}")
-    k2.metric("Skipped", f"{skip_count:,}")
-    k3.metric("Errors", f"{err_count:,}")
-    k4.metric("Total files", f"{len(batch_df):,}")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Succeeded", f"{ok_count:,}")
+        k2.metric("Skipped", f"{skip_count:,}")
+        k3.metric("Errors", f"{err_count:,}")
+        k4.metric("Total files", f"{len(batch_df):,}")
 
-    st.dataframe(batch_df, width="stretch", hide_index=True)
+        st.dataframe(batch_df, width="stretch", hide_index=True)
 
     st.divider()
     st.subheader("Review (choose a successful run)")

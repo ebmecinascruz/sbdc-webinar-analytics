@@ -34,20 +34,6 @@ from scripts.center_splitting import (
 import matplotlib.pyplot as plt
 
 
-def render_and_close(fig):
-    st.pyplot(fig, clear_figure=True)
-    plt.close(fig)
-
-
-def save_fig_overwrite(fig, path: Path, dpi: int = 150) -> None:
-    """
-    Save a matplotlib figure to disk, overwriting if it already exists.
-    Also closes the figure to prevent memory leaks.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
-
-
 # ============================
 # Page config + light styling
 # ============================
@@ -126,6 +112,53 @@ def _parse_webinar_filename(name: str) -> dict:
     webinar_id = m.group("id")
     webinar_date = f"{m.group('y')}-{m.group('m')}-{m.group('d')}"
     return {"ok": True, "webinar_id": webinar_id, "webinar_date": webinar_date}
+
+
+def render_and_close(fig):
+    st.pyplot(fig, clear_figure=True)
+    plt.close(fig)
+
+
+def save_fig_overwrite(fig, path: Path, dpi: int = 150) -> None:
+    """
+    Save a matplotlib figure to disk, overwriting if it already exists.
+    Also closes the figure to prevent memory leaks.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=dpi, bbox_inches="tight")
+
+
+def _safe_multiselect_defaults(
+    options: list, desired: list | None, *, fallback: str = "last"
+) -> list:
+    """
+    Ensure multiselect defaults are always valid:
+    - keep only values that exist in options
+    - if nothing remains, fall back to [options[-1]] or [options[0]]
+    """
+    if not options:
+        return []
+
+    desired = desired or []
+    opt_set = set(options)
+    cleaned = [d for d in desired if d in opt_set]
+
+    if cleaned:
+        return cleaned
+
+    return [options[-1]] if fallback == "last" else [options[0]]
+
+
+def _load_masters(people_master_path: str, attendance_master_path: str):
+    att_path = Path(attendance_master_path)
+    ppl_path = Path(people_master_path)
+
+    if not (att_path.exists() and ppl_path.exists()):
+        return None, None
+
+    attendance_master_df = pd.read_csv(att_path)
+    people_master_df = pd.read_csv(ppl_path)
+    return attendance_master_df, people_master_df
 
 
 # ============================
@@ -471,7 +504,6 @@ st.divider()
 st.subheader("Center reports (Latest attended per person)")
 
 if att_master_path.exists() and ppl_master_path.exists():
-    # We already loaded these above for KPIs, but in case this section runs independently:
     if "attendance_master_df" not in locals():
         attendance_master_df = pd.read_csv(att_master_path)
     if "people_master_df" not in locals():
@@ -487,10 +519,11 @@ if att_master_path.exists() and ppl_master_path.exists():
         if not available_dates:
             st.info("No webinar dates found in attendance_master.")
         else:
-            default_dates = st.session_state.center_report_dates or [
-                available_dates[-1]
-            ]
-
+            default_dates = _safe_multiselect_defaults(
+                options=available_dates,
+                desired=st.session_state.get("center_report_dates"),
+                fallback="last",  # or "first"
+            )
             picked_dates = st.multiselect(
                 "Select webinar date(s) to include",
                 options=available_dates,
@@ -530,7 +563,7 @@ if att_master_path.exists() and ppl_master_path.exists():
                         prefix=report_prefix,
                         attendance_key="email_clean",
                         attendance_date_col=DATE_COL,
-                        attendance_attended_col="Attended",  # keep your current
+                        attendance_attended_col="Attended",
                         final_center_col="Final Center",
                     )
 

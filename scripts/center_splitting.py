@@ -119,7 +119,7 @@ def add_final_center(
     *,
     is_client_col: str = "Client?",
     client_center_col: str = "NS Center Abbr",
-    nonclient_center_col: str = "Assigned Center Abbr",  # change to your actual column
+    nonclient_center_col: str = "Assigned Center Abbr",
     out_col: str = "Final Center",
 ) -> pd.DataFrame:
     out = df.copy()
@@ -205,7 +205,7 @@ def build_latest_attended_center_reports(
     prefix: str = "attendees_selected_dates",
     include_dates: list[str] | None = None,
     date_range: tuple[str, str] | None = None,
-    # Column names (match your screenshot defaults)
+    # Column names
     attendance_key: str = "email_clean",
     attendance_date_col: str = "Webinar Date",
     attendance_attended_col: str = "Attended",

@@ -524,9 +524,6 @@ with tab_run:
                 _, collisions_df = find_name_collisions(
                     people_master_df,
                     name_col="full_name_clean",
-                    # if you upgraded to the distinct-email version, use that signature instead
-                    # email_col="email_clean",
-                    # min_distinct_emails=2,
                 )
                 collisions_df.to_csv(name_collisions_master_path, index=False)
                 collision_groups_master = (
@@ -557,7 +554,7 @@ with tab_run:
                     people_overwrite_path, index=False, engine="openpyxl"
                 )
 
-            # Optional: show unreviewed count
+            # Show unreviewed count
             unreviewed_df = get_unreviewed_overwrite_rows(
                 overwrite_df, include_add=False
             )
@@ -575,7 +572,7 @@ with tab_run:
                     people_master_df,
                     overwrite_df,
                     email_col="email_clean",
-                    require_approved=True,  # set False if you want actions applied immediately
+                    require_approved=True,
                 )
                 people_final_df.to_csv(people_final_path, index=False)
 
@@ -591,13 +588,10 @@ with tab_run:
                     )
                     attendance_final_df.to_csv(attendance_final_path, index=False)
 
-            # Compute collisions AFTER overwrites (this reflects what the app will actually use)
+            # Compute collisions AFTER overwrites
             _, collisions_final_df = find_name_collisions(
                 people_final_df,
                 name_col="full_name_clean",
-                # if using distinct-email version, keep these:
-                # email_col="email_clean",
-                # min_distinct_emails=2,
             )
 
             name_collisions_final_path = outputs_dir / "name_collisions_final.csv"

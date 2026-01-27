@@ -14,7 +14,6 @@ from scripts.columns import (
     ZIP_MERGE_KEEP_COLS,
     FINAL_KEEP_COLS,
 )
-from scripts.name_cleaning import find_name_collisions, collision_name_set
 
 from scripts.master_tables import (
     split_people_and_attendance,
@@ -68,8 +67,6 @@ def run_webinar_neoserra_match(
     attendance_before = (
         len(attendance_before_df) if not attendance_before_df.empty else 0
     )
-
-    collision_names_before = collision_name_set(people_before_df, "full_name_clean")
 
     # -------------------------
     # 1) Load & clean webinar
@@ -131,15 +128,6 @@ def run_webinar_neoserra_match(
         people_session, master_path=people_master_path
     )
 
-    # -------------------------
-    # 5.5) Name collisions (for review)
-    # -------------------------
-    dup_names, name_collision_df = find_name_collisions(
-        people_after_df,
-        name_col="full_name_clean",
-        min_count=2,
-    )
-
     attendance_after = len(attendance_after_df)
     people_after = len(people_after_df)
 
@@ -178,18 +166,6 @@ def run_webinar_neoserra_match(
             key="email_clean",
         )
 
-    # ---- Collisions deltas ----
-    # Collisions added
-    collision_names_after = set(dup_names)
-
-    new_collision_names = collision_names_after - collision_names_before
-    # resolved_collision_names = collision_names_before - collision_names_after  # optional
-
-    people_name_collision_groups = len(collision_names_after)
-    people_name_collision_new_groups = len(new_collision_names)
-    # people_name_collision_resolved_groups = len(resolved_collision_names)  # optional
-    people_name_collision_rows = len(name_collision_df)
-
     # -------------------------
     # 6) Save session output
     # -------------------------
@@ -200,19 +176,6 @@ def run_webinar_neoserra_match(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     merged[ZIP_MERGE_KEEP_COLS].to_csv(output_path, index=False)
-
-    # Save name collisions only if present
-    if not name_collision_df.empty:
-        collision_path = output_path.with_name(
-            output_path.stem + "_people_name_collisions.csv"
-        )
-        name_collision_df.to_csv(collision_path, index=False)
-
-    collisions_master_path = Path(people_master_path).with_name(
-        "people_name_collisions_master.csv"
-    )
-    collisions_master_path.parent.mkdir(parents=True, exist_ok=True)
-    name_collision_df.to_csv(collisions_master_path, index=False)
 
     # -------------------------
     # 7) Print summary
@@ -232,9 +195,9 @@ def run_webinar_neoserra_match(
         people_after=people_after,
         people_new=people_new,
         people_enriched=people_enriched,
-        people_name_collision_groups=people_name_collision_groups,
-        people_name_collision_rows=people_name_collision_rows,
-        people_name_collision_new_groups=people_name_collision_new_groups,
+        people_name_collision_groups=0,
+        people_name_collision_rows=0,
+        people_name_collision_new_groups=0,
     )
 
     if print_summary:
@@ -251,9 +214,6 @@ def run_webinar_neoserra_match(
         "people_enriched_keys": enriched_keys,
         "people_enriched_before": enriched_before_df,
         "people_enriched_after": enriched_after_df,
-        # name collisions (review queue)
-        "people_name_collision_names": dup_names,
-        "people_name_collision_df": name_collision_df,
         # invalid emails
         "webinar_invalid_emails": webinar_non_emails,
     }

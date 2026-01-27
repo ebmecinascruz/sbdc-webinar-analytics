@@ -11,6 +11,14 @@ from scripts.run_webinar_neoserra_match import (
     run_webinar_neoserra_match,
 )
 from scripts.center_loading import CENTERS_PATH
+from scripts.name_cleaning import find_name_collisions
+from scripts.overwriting import (
+    create_people_overwrite_from_collisions,
+    update_people_overwrite_with_new_collisions,
+    get_unreviewed_overwrite_rows,
+    apply_attendance_removals_from_people_overwrite,
+    apply_people_overwrites,
+)
 
 
 from scripts.kpis import generate_webinar_kpis
@@ -74,8 +82,8 @@ if "output_paths" not in st.session_state:
     st.session_state.output_paths = []
 
 if "last_run_meta" not in st.session_state:
-    # small dict with run directory paths, etc.
-    st.session_state.last_run_meta = None
+    st.session_state.last_run_meta = {}
+
 
 if "center_report_dates" not in st.session_state:
     st.session_state.center_report_dates = []
@@ -149,16 +157,47 @@ def _safe_multiselect_defaults(
     return [options[-1]] if fallback == "last" else [options[0]]
 
 
-def _load_masters(people_master_path: str, attendance_master_path: str):
-    att_path = Path(attendance_master_path)
-    ppl_path = Path(people_master_path)
+def _load_masters(
+    people_master_path: str,
+    attendance_master_path: str,
+    *,
+    base_path: Path,
+):
+    """
+    Prefer FINAL outputs if they exist (post-overwrite), else fall back to MASTER.
+    Returns: (attendance_df, people_df, meta_dict)
+    """
+    # finals live under base_path/outputs/
+    people_final_path, attendance_final_path = _final_paths(base_path)
 
-    if not (att_path.exists() and ppl_path.exists()):
-        return None, None
+    # choose paths
+    ppl_path = (
+        people_final_path if people_final_path.exists() else Path(people_master_path)
+    )
+    att_path = (
+        attendance_final_path
+        if attendance_final_path.exists()
+        else Path(attendance_master_path)
+    )
 
-    attendance_master_df = pd.read_csv(att_path)
-    people_master_df = pd.read_csv(ppl_path)
-    return attendance_master_df, people_master_df
+    if not (ppl_path.exists() and att_path.exists()):
+        return None, None, {"people_source": None, "attendance_source": None}
+
+    people_df = pd.read_csv(ppl_path)
+    attendance_df = pd.read_csv(att_path)
+
+    meta = {
+        "people_source": "FINAL" if ppl_path == people_final_path else "MASTER",
+        "attendance_source": "FINAL" if att_path == attendance_final_path else "MASTER",
+        "people_path": str(ppl_path),
+        "attendance_path": str(att_path),
+    }
+    return attendance_df, people_df, meta
+
+
+def _final_paths(base_path: Path) -> tuple[Path, Path]:
+    outputs_dir = base_path / "outputs"
+    return outputs_dir / "people_final.csv", outputs_dir / "attendance_final.csv"
 
 
 # ============================
@@ -234,7 +273,7 @@ with st.sidebar:
         st.session_state.batch_df = None
         st.session_state.success_runs = []
         st.session_state.output_paths = []
-        st.session_state.last_run_meta = None
+        st.session_state.last_run_meta = {}
         st.toast("Cleared last batch results.")
 
 
@@ -446,6 +485,175 @@ with tab_run:
         st.session_state.output_paths = [str(p) for p in output_paths]
 
     # ============================
+    # Post-batch: collisions -> overwrite -> finals
+    # ============================
+    with st.container(border=True):
+        st.subheader("Post-batch review artifacts + final outputs")
+
+        outputs_dir = base_path / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+
+        overwrites_dir = base_path / "overwrites"
+        overwrites_dir.mkdir(parents=True, exist_ok=True)
+
+        people_master_df = None
+        attendance_master_df = None
+        name_collisions_final_path = None
+        collision_groups_final = None
+        collision_rows_final = None
+        unreviewed_count = None
+
+        # Paths
+        name_collisions_master_path = outputs_dir / "name_collisions_master.csv"
+        people_overwrite_path = overwrites_dir / "people_overwrite.xlsx"
+        people_final_path = outputs_dir / "people_final.csv"
+        attendance_final_path = outputs_dir / "attendance_final.csv"
+
+        # 1) Load masters produced by the batch loop
+        if not Path(people_master_path).exists():
+            st.warning(
+                "people_master.csv not found; skipping collisions/overwrites/finals."
+            )
+        else:
+            people_master_df = pd.read_csv(people_master_path)
+
+            attendance_master_df = None
+            if Path(attendance_master_path).exists():
+                attendance_master_df = pd.read_csv(attendance_master_path)
+
+            with st.spinner("Computing name collisions master…"):
+                _, collisions_df = find_name_collisions(
+                    people_master_df,
+                    name_col="full_name_clean",
+                    # if you upgraded to the distinct-email version, use that signature instead
+                    # email_col="email_clean",
+                    # min_distinct_emails=2,
+                )
+                collisions_df.to_csv(name_collisions_master_path, index=False)
+                collision_groups_master = (
+                    collisions_df["full_name_clean"].nunique()
+                    if not collisions_df.empty
+                    and "full_name_clean" in collisions_df.columns
+                    else 0
+                )
+                collision_rows_master = len(collisions_df)
+
+            with st.spinner("Creating/updating overwrite file…"):
+                if not people_overwrite_path.exists():
+                    overwrite_df = create_people_overwrite_from_collisions(
+                        collisions_df
+                    )
+                else:
+                    overwrite_existing = pd.read_excel(
+                        people_overwrite_path, engine="openpyxl"
+                    ).fillna("")
+                    overwrite_df = update_people_overwrite_with_new_collisions(
+                        overwrite_existing,
+                        collisions_df,
+                        name_col="full_name_clean",
+                        email_col="email_clean",
+                    )
+
+                overwrite_df.to_excel(
+                    people_overwrite_path, index=False, engine="openpyxl"
+                )
+
+            # Optional: show unreviewed count
+            unreviewed_df = get_unreviewed_overwrite_rows(
+                overwrite_df, include_add=False
+            )
+            st.info(
+                f"Overwrite rows needing review (blank/invalid action): {len(unreviewed_df)}"
+            )
+            unreviewed_count = len(unreviewed_df)
+
+            # reviewed rows = collision rows - unreviewed rows (ignore ADD rows)
+            overwrite_reviewed_rows = max(0, len(overwrite_df) - unreviewed_count)
+
+            # 2) Apply overwrites to build finals
+            with st.spinner("Building people_final + attendance_final…"):
+                people_final_df, people_info = apply_people_overwrites(
+                    people_master_df,
+                    overwrite_df,
+                    email_col="email_clean",
+                    require_approved=True,  # set False if you want actions applied immediately
+                )
+                people_final_df.to_csv(people_final_path, index=False)
+
+                att_info = None
+                if attendance_master_df is not None:
+                    attendance_final_df, att_info = (
+                        apply_attendance_removals_from_people_overwrite(
+                            attendance_master_df,
+                            overwrite_df,
+                            email_col="email_clean",
+                            require_approved=True,
+                        )
+                    )
+                    attendance_final_df.to_csv(attendance_final_path, index=False)
+
+            # Compute collisions AFTER overwrites (this reflects what the app will actually use)
+            _, collisions_final_df = find_name_collisions(
+                people_final_df,
+                name_col="full_name_clean",
+                # if using distinct-email version, keep these:
+                # email_col="email_clean",
+                # min_distinct_emails=2,
+            )
+
+            name_collisions_final_path = outputs_dir / "name_collisions_final.csv"
+            collisions_final_df.to_csv(name_collisions_final_path, index=False)
+
+            collision_groups_final = (
+                collisions_final_df["full_name_clean"].nunique()
+                if not collisions_final_df.empty
+                and "full_name_clean" in collisions_final_df.columns
+                else 0
+            )
+            collision_rows_final = len(collisions_final_df)
+
+            # Small summary
+            st.success(
+                "Saved: name_collisions_master, people_overwrite, people_final"
+                + (", attendance_final" if att_info else "")
+            )
+            st.caption(
+                f"People removed: {people_info['removed_rows']} | "
+                f"People added: {people_info['added_rows']} | "
+                f"People final rows: {people_info['final_rows']}"
+            )
+            if att_info:
+                st.caption(
+                    f"Attendance removed: {att_info['removed_rows']} | "
+                    f"Attendance final rows: {att_info['final_rows']} | "
+                    f"Collisions after overwrites (FINAL): {collision_groups_final} group(s), {collision_rows_final} row(s). | "
+                    f"Unreviewed overwrite rows: {unreviewed_count}."
+                )
+
+        if people_master_df is not None:
+            st.session_state.last_run_meta.update(
+                {
+                    "name_collisions_master_path": str(name_collisions_master_path),
+                    "people_overwrite_path": str(people_overwrite_path),
+                    "people_final_path": str(people_final_path),
+                    "attendance_final_path": str(attendance_final_path),
+                }
+            )
+
+            if name_collisions_final_path is not None:
+                st.session_state.last_run_meta.update(
+                    {
+                        "name_collisions_final_path": str(name_collisions_final_path),
+                        "global_collision_groups_final": int(collision_groups_final),
+                        "global_collision_rows_final": int(collision_rows_final),
+                        "overwrite_unreviewed_rows": int(unreviewed_count),
+                        "global_collision_groups_master": int(collision_groups_master),
+                        "global_collision_rows_master": int(collision_rows_master),
+                        "overwrite_reviewed_rows": int(overwrite_reviewed_rows),
+                    }
+                )
+
+    # ============================
     # Render stored batch results (persists across reruns)
     # ============================
     batch_df = st.session_state.batch_df
@@ -462,8 +670,11 @@ with tab_run:
 with tab_kpis:
     st.subheader("Webinar KPIs (overall)")
 
-    attendance_master_df, people_master_df = _load_masters(
-        people_master_path, attendance_master_path
+    attendance_master_df, people_master_df, src = _load_masters(
+        people_master_path, attendance_master_path, base_path=base_path
+    )
+    st.caption(
+        f"Using: people={src['people_source']}, attendance={src['attendance_source']}"
     )
 
     if attendance_master_df is None or people_master_df is None:
@@ -527,8 +738,11 @@ with tab_kpis:
 with tab_reports:
     st.subheader("Center reports (Latest attended per person)")
 
-    attendance_master_df, people_master_df = _load_masters(
-        people_master_path, attendance_master_path
+    attendance_master_df, people_master_df, src = _load_masters(
+        people_master_path, attendance_master_path, base_path=base_path
+    )
+    st.caption(
+        f"Using: people={src['people_source']}, attendance={src['attendance_source']}"
     )
 
     if attendance_master_df is None or people_master_df is None:
@@ -635,14 +849,19 @@ with tab_maps:
     st.subheader("Center mapping (clients vs non-clients)")
 
     meta = st.session_state.last_run_meta
-    attendance_master_df, people_master_df = _load_masters(
-        people_master_path, attendance_master_path
+    attendance_master_df, people_master_df, src = _load_masters(
+        people_master_path, attendance_master_path, base_path=base_path
+    )
+    st.caption(
+        f"Using: people={src['people_source']}, attendance={src['attendance_source']}"
     )
 
-    if not meta:
+    required_keys = ["neoserra_path", "centers_path", "cache_path"]
+
+    if any(k not in meta for k in required_keys):
         st.info("Run the pipeline first so inputs are available for post-processing.")
     elif people_master_df is None:
-        st.info("Masters not found yet. Run the pipeline first.")
+        st.info("People file not found yet. Run the pipeline first.")
     else:
         neoserra_path = Path(meta["neoserra_path"])
         centers_path = Path(meta["centers_path"])
@@ -708,6 +927,19 @@ with tab_maps:
 # -------------------------
 with tab_review:
     st.subheader("Batch results + review")
+
+    # --- Global (FINAL) collision status + overwrite status ---
+    meta = st.session_state.last_run_meta or {}
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(
+        "Collisions in MASTER (groups)", meta.get("global_collision_groups_master", "—")
+    )
+    m2.metric("Collisions reviewed (rows)", meta.get("overwrite_reviewed_rows", "—"))
+    m3.metric(
+        "Collisions in FINAL (groups)", meta.get("global_collision_groups_final", "—")
+    )
+    m4.metric("Unreviewed (rows)", meta.get("overwrite_unreviewed_rows", "—"))
 
     if batch_df is None:
         st.info("No batch results yet. Run the pipeline first.")
@@ -777,7 +1009,7 @@ with tab_review:
             _fmt_int(getattr(picked_summary, "attendance_overwritten", None)),
         )
 
-        s_bot = st.columns(4)
+        s_bot = st.columns(2)
         s_bot[0].metric(
             "People new", _fmt_int(getattr(picked_summary, "people_new", None))
         )
@@ -785,41 +1017,8 @@ with tab_review:
             "People enriched",
             _fmt_int(getattr(picked_summary, "people_enriched", None)),
         )
-        s_bot[2].metric(
-            "Collision groups",
-            _fmt_int(getattr(picked_summary, "people_name_collision_groups", None)),
-        )
-        s_bot[3].metric(
-            "Collision rows",
-            _fmt_int(getattr(picked_summary, "people_name_collision_rows", None)),
-        )
 
-        with st.expander("Raw summary (debug)", expanded=False):
-            try:
-                st.json(asdict(picked_summary))
-            except Exception:
-                st.write(picked_summary)
-
-        tab_collisions, tab_enriched, tab_invalid = st.tabs(
-            ["Name collisions", "Enriched deltas", "Invalid emails"]
-        )
-
-        with tab_collisions:
-            coll_df = picked_results.get("people_name_collision_df")
-            if isinstance(coll_df, pd.DataFrame) and not coll_df.empty:
-                st.caption(f"{len(coll_df):,} rows")
-                q = st.text_input(
-                    "Filter (contains)", value="", key=f"coll_filter_{idx}"
-                )
-                view = coll_df
-                if q.strip():
-                    mask = view.astype(str).apply(
-                        lambda s: s.str.contains(q, case=False, na=False)
-                    )
-                    view = view[mask.any(axis=1)]
-                st.dataframe(view, width="stretch", hide_index=True)
-            else:
-                st.success("No name collisions in this run.")
+        tab_enriched, tab_invalid = st.tabs(["Enriched deltas", "Invalid emails"])
 
         with tab_enriched:
             before_df = picked_results.get("people_enriched_before")

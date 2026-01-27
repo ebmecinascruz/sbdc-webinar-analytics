@@ -50,7 +50,6 @@ def match_webinar_to_neoserra(
     blocked = {"email_clean", "full_name_clean"}
     ns_keep_cols = [c for c in ns_keep_cols if c not in blocked]
 
-    # If requested, don't overwrite any columns that already exist in webinar
     if protect_webinar_cols:
         webinar_cols = set(out.columns)
         ns_keep_cols_fill = [c for c in ns_keep_cols if c not in webinar_cols]
@@ -60,7 +59,6 @@ def match_webinar_to_neoserra(
     # ----------------------------
     # Normalize ZIP to zip_clean
     # ----------------------------
-    # Use existing clean_zip_5() and avoid clobbering existing zip_clean if already there.
     if zip_clean_col not in out.columns:
         if webinar_zip_col in out.columns:
             out = clean_zip_5(out, raw_zip_col=webinar_zip_col, out_col=zip_clean_col)
@@ -108,7 +106,6 @@ def match_webinar_to_neoserra(
 
     email_matched = out["_email_merge_status"].eq("both")
 
-    # We’ll track match_source like before
     out["ns_match_source"] = "none"
     out.loc[email_matched, "ns_match_source"] = "email"
 
@@ -191,7 +188,7 @@ def match_webinar_to_neoserra(
     # Cleanup indicators / temp keys
     out = out.drop(columns=["_email_merge_status", "_name_zip_key"], errors="ignore")
 
-    # Client flags (same behavior)
+    # Client flags
     if "Client ID" in out.columns:
         out["is_client"] = out["Client ID"].notna()
         out["client_status"] = out["is_client"].map(
@@ -201,7 +198,7 @@ def match_webinar_to_neoserra(
         out["is_client"] = False
         out["client_status"] = "non_client"
 
-    # Validate email_clean unchanged (same behavior)
+    # Validate email_clean unchanged
     if validate_email_unchanged:
         changed = (out["email_clean"].fillna("").to_numpy() != email_before).sum()
         if changed:

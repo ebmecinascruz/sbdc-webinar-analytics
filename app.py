@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import os
 from pathlib import Path
 import re

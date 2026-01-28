@@ -48,6 +48,8 @@ def process_zoom_attendance_file_full(
     email_col_in: str = "Email",
     attended_col_in: str = "Attended",
     webinar_keep_cols: list[str] = WEBINAR_KEEP_COLS,
+    approval_col_in: str = "Approval Status",
+    drop_cancelled_registrations: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Reads a Zoom attendee export and returns:
@@ -64,6 +66,14 @@ def process_zoom_attendance_file_full(
         skiprows = detect_zoom_header_skiprows(file_path)
 
     df = pd.read_csv(file_path, skiprows=skiprows, index_col=False)
+
+    # ----------------------------
+    # Drop cancelled registrations
+    # ----------------------------
+    if drop_cancelled_registrations and approval_col_in in df.columns:
+        _approval = df[approval_col_in].astype(str).str.strip().str.lower()
+        # Keep ONLY approved (drops "cancelled by self/host" and anything else)
+        df = df[_approval == "approved"].copy()
 
     # add missing column
     df = ensure_state_from_zip(df)

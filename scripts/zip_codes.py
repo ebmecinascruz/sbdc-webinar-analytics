@@ -19,16 +19,30 @@ ZIP_COLS = [
 
 
 def clean_zip_5(
-    df: pd.DataFrame, raw_zip_col: str, out_col: str = "zip_clean"
+    df: pd.DataFrame,
+    raw_zip_col: str,
+    out_col: str = "zip_clean",
 ) -> pd.DataFrame:
+    """
+    Normalize ZIP codes to 5-digit US ZIPs.
+
+    Handles:
+      - ZIP+4 (90814-8124 → 90814)
+      - Excel artifacts (="90814-8124")
+      - Extra whitespace / text
+    """
     out = df.copy()
+
     out[out_col] = (
         out[raw_zip_col]
         .astype("string")
+        # Remove Excel ="..." wrapper if present
+        .str.replace(r'^="?|"$', "", regex=True)
+        # Extract first 5 digits (US ZIP)
         .str.extract(r"(\d{5})", expand=False)
         .astype("string")
-        .str.strip()
     )
+
     return out
 
 

@@ -9,7 +9,7 @@ from scripts.attendance_cleaning import (
     split_invalid_emails_from_clean,
 )
 from scripts.columns import WEBINAR_KEEP_COLS
-from scripts.webinar_cleaning import ensure_state_from_zip
+from scripts.webinar_cleaning import ensure_state_from_zip, ensure_columns_exist
 
 
 def detect_zoom_header_skiprows(
@@ -80,6 +80,12 @@ def process_zoom_attendance_file_full(
     # Keep only columns that exist (Zoom changes headers sometimes)
     keep = [c for c in webinar_keep_cols if c in df.columns]
     out = df[keep].copy()
+
+    # Ensure schema stability across Zoom formats
+    out = ensure_columns_exist(
+        out,
+        cols=["Industry", "Number of Employees"],
+    )
 
     webinar_id, date_suffix = parse_attendance_filename(file_path)
     out["webinar_id"] = webinar_id

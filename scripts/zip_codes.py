@@ -41,6 +41,7 @@ def clean_zip_5(
         # Extract first 5 digits (US ZIP)
         .str.extract(r"(\d{5})", expand=False)
         .astype("string")
+        .str.zfill(5)
     )
 
     return out
@@ -78,6 +79,38 @@ def build_zip_ref_pgeocode(unique_zips: list[str]) -> pd.DataFrame:
             "zip_county_code",
         ]
     ]
+
+
+def build_postal_ref_ca(unique_postals: list[str]) -> pd.DataFrame:
+    nomi = pgeocode.Nominatim("CA")
+    ref = nomi.query_postal_code(unique_postals).reset_index()
+
+    # Handle index column naming differences
+    if "postal_code" not in ref.columns and "index" in ref.columns:
+        ref = ref.rename(columns={"index": "postal_code"})
+
+    # Rename the essentials
+    rename_map = {
+        "postal_code": "postal_clean",
+        "latitude": "zip_lat",
+        "longitude": "zip_lon",
+    }
+    ref = ref.rename(columns=rename_map)
+
+    # Canada "state/province" column varies — pick the first one that exists
+    province_candidates = ["province_code", "state_code", "province_name", "state_name"]
+    prov_col = next((c for c in province_candidates if c in ref.columns), None)
+
+    if prov_col is not None:
+        ref["zip_state"] = ref[prov_col].astype("string").str.strip()
+    else:
+        # If nothing exists, still keep the row (state just missing)
+        ref["zip_state"] = pd.NA
+
+    # Normalize CA postal format a bit (remove extra spaces)
+    ref["postal_clean"] = ref["postal_clean"].astype("string").str.strip().str.upper()
+
+    return ref[["postal_clean", "zip_lat", "zip_lon", "zip_state"]]
 
 
 def add_zip_problems(

@@ -91,6 +91,12 @@ def process_zoom_attendance_file_full(
     out["webinar_id"] = webinar_id
     out["webinar_date"] = date_suffix  # YYYY_MM_DD string for now
 
+    out["Registration Time"] = pd.to_datetime(
+        out["Registration Time"],
+        format="%m/%d/%Y %I:%M:%S %p",
+        errors="coerce",
+    )
+
     # Build clean email
     out = add_email_clean(out, email_col=email_col_in, out_col="email_clean")
 

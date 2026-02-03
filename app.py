@@ -18,7 +18,7 @@ from scripts.overwriting import (
     apply_attendance_removals_from_people_overwrite,
     apply_people_overwrites,
 )
-
+from scripts.neoserra_helper import add_zip_geography
 
 from scripts.kpis import generate_webinar_kpis
 from scripts.attendance_plots import (
@@ -33,6 +33,8 @@ from scripts.attendance_plots import (
 from scripts.center_mapping import (
     map_centers_for_nonclients,
     map_centers_for_clients,
+    make_all_attendees_zip_map_single_colored,
+    map_centers_for_run_clients,
 )
 from scripts.center_splitting import (
     build_latest_attended_center_reports,
@@ -876,7 +878,10 @@ with tab_maps:
             out_nonclients_html = map_out_dir / "nonclients_zip_footprint.html"
             out_clients_html = map_out_dir / "clients_zip_footprint.html"
 
-            # KEY improvement: don't auto-run unless user clicks
+            # NEW
+            out_run_clients_html = map_out_dir / "run_clients_zip_footprint.html"
+            out_all_people_html = map_out_dir / "all_people_zip_footprint.html"
+
             if st.button("Generate maps", type="primary", use_container_width=True):
                 with st.spinner("Generating non-client ZIP footprint map..."):
                     map_centers_for_nonclients(
@@ -887,32 +892,83 @@ with tab_maps:
                         out_html=out_nonclients_html,
                     )
 
-                with st.spinner("Generating client ZIP footprint map..."):
+                with st.spinner(
+                    "Generating client ZIP footprint map (ALL NeoSerra clients)..."
+                ):
                     map_centers_for_clients(
                         neoserra_df=neoserra_raw_df,
                         raw_zip_col="Physical Address ZIP Code",
                         out_html=out_clients_html,
                     )
 
-                st.success("Center maps generated and saved.")
+                # clients that exist IN THIS RUN
+                with st.spinner("Generating RUN client ZIP footprint map..."):
+                    # Ensure zip_clean/zip_lat/zip_lon exist for people_master_df
+                    if not {"zip_clean", "zip_lat", "zip_lon"}.issubset(
+                        people_master_df.columns
+                    ):
+                        people_master_df = add_zip_geography(
+                            people_master_df,
+                            raw_zip_col="Zip/Postal Code",
+                            zip_col_out="zip_clean",
+                        )
 
+                    run_clients_df = people_master_df[
+                        people_master_df["Client?"]
+                    ].copy()
+
+                    map_centers_for_run_clients(
+                        people_df=run_clients_df,
+                        out_html=str(out_run_clients_html),
+                    )
+
+                with st.spinner(
+                    "Generating ALL attendees ZIP footprint (aggregated)..."
+                ):
+                    make_all_attendees_zip_map_single_colored(
+                        people_df=people_master_df,
+                        out_html=str(out_all_people_html),
+                        zip_col="zip_clean",
+                        zip_lat_col="zip_lat",
+                        zip_lon_col="zip_lon",
+                        dot_color="blue",  # pick any single color
+                    )
+
+                st.success("Center maps generated and saved.")
+            # -------------------------
+            # Preview maps
+            # -------------------------
+            st.divider()
             show_prev = st.toggle("Preview latest maps", value=True)
+
             if show_prev:
                 if out_nonclients_html.exists():
                     st.markdown("### Non-clients ZIP footprint")
                     st.components.v1.html(
-                        out_nonclients_html.read_text(encoding="utf-8"), height=650
+                        out_nonclients_html.read_text(encoding="utf-8"),
+                        height=650,
                     )
-                else:
-                    st.info("Non-client map not generated yet.")
 
                 if out_clients_html.exists():
-                    st.markdown("### Clients ZIP footprint")
+                    st.markdown("### All NeoSerra clients ZIP footprint")
                     st.components.v1.html(
-                        out_clients_html.read_text(encoding="utf-8"), height=650
+                        out_clients_html.read_text(encoding="utf-8"),
+                        height=650,
                     )
-                else:
-                    st.info("Client map not generated yet.")
+
+                if out_run_clients_html.exists():
+                    st.markdown("### Clients in this run ZIP footprint")
+                    st.components.v1.html(
+                        out_run_clients_html.read_text(encoding="utf-8"),
+                        height=650,
+                    )
+
+                if out_all_people_html.exists():
+                    st.markdown("### All attendees ZIP footprint")
+                    st.components.v1.html(
+                        out_all_people_html.read_text(encoding="utf-8"),
+                        height=650,
+                    )
 
 
 # -------------------------

@@ -9,7 +9,7 @@ from scripts.attendance_cleaning import (
     split_invalid_emails_from_clean,
 )
 from scripts.columns import WEBINAR_KEEP_COLS
-from scripts.webinar_cleaning import ensure_state_from_zip
+from scripts.webinar_cleaning import ensure_state_from_zip, ensure_columns_exist
 
 
 def detect_zoom_header_skiprows(
@@ -48,6 +48,8 @@ def process_zoom_attendance_file_full(
     email_col_in: str = "Email",
     attended_col_in: str = "Attended",
     webinar_keep_cols: list[str] = WEBINAR_KEEP_COLS,
+    approval_col_in: str = "Approval Status",
+    drop_cancelled_registrations: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Reads a Zoom attendee export and returns:
@@ -65,15 +67,35 @@ def process_zoom_attendance_file_full(
 
     df = pd.read_csv(file_path, skiprows=skiprows, index_col=False)
 
+    # ----------------------------
+    # Drop cancelled registrations
+    # ----------------------------
+    if drop_cancelled_registrations and approval_col_in in df.columns:
+        _approval = df[approval_col_in].astype(str).str.strip().str.lower()
+        # Keep ONLY approved (drops "cancelled by self/host" and anything else)
+        df = df[_approval == "approved"].copy()
+
     # add missing column
     df = ensure_state_from_zip(df)
     # Keep only columns that exist (Zoom changes headers sometimes)
     keep = [c for c in webinar_keep_cols if c in df.columns]
     out = df[keep].copy()
 
+    # Ensure schema stability across Zoom formats
+    out = ensure_columns_exist(
+        out,
+        cols=["Industry", "Number of Employees"],
+    )
+
     webinar_id, date_suffix = parse_attendance_filename(file_path)
     out["webinar_id"] = webinar_id
     out["webinar_date"] = date_suffix  # YYYY_MM_DD string for now
+
+    out["Registration Time"] = pd.to_datetime(
+        out["Registration Time"],
+        format="%m/%d/%Y %I:%M:%S %p",
+        errors="coerce",
+    )
 
     # Build clean email
     out = add_email_clean(out, email_col=email_col_in, out_col="email_clean")

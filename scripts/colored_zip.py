@@ -3,6 +3,8 @@ import numpy as np
 import folium
 from folium.plugins import MarkerCluster
 
+from scripts.map_helper import _cluster_sum_people_icon_create_function, _add_zip_point
+
 
 def add_center_legend(
     m,
@@ -200,7 +202,20 @@ def make_nonclient_zip_map_colored(
         abbr = str(abbr).strip()
         fg = folium.FeatureGroup(name=f"ZIPs → {abbr}", show=True)
 
-        target = MarkerCluster().add_to(fg) if cluster else fg
+        icon_fn = _cluster_sum_people_icon_create_function()
+        target = (
+            MarkerCluster(
+                icon_create_function=icon_fn,
+                disable_clustering_at_zoom=13,  # <-- show individual circles earlier
+                max_cluster_radius=35,  # <-- smaller = less clustering
+                spiderfy_on_max_zoom=True,
+                show_coverage_on_hover=False,
+                zoom_to_bounds_on_click=True,
+            ).add_to(fg)
+            if cluster
+            else fg
+        )
+
         dot_color = color_map.get(abbr, "blue")
 
         for _, r in g.iterrows():
@@ -212,22 +227,27 @@ def make_nonclient_zip_map_colored(
                 f"{float(dist):.1f} mi" if dist is not None and pd.notna(dist) else "NA"
             )
 
-            folium.CircleMarker(
-                location=[float(r[zip_lat_col]), float(r[zip_lon_col])],
-                radius=8,
-                color=dot_color,
-                fill=True,
-                fill_color=dot_color,
-                fill_opacity=0.75,
-                popup=folium.Popup(
-                    f"ZIP: <b>{z5}</b>"
-                    f"<br>Non-clients: <b>{n_zip}</b>"
-                    f"<br>Assigned: <b>{abbr}</b>"
-                    f"<br>Distance: {dist_txt}",
-                    max_width=260,
-                ),
-                tooltip=f"{z5} — {n_zip} non-clients → {abbr} ({dist_txt})",
-            ).add_to(target)
+            lat = float(r[zip_lat_col])
+            lon = float(r[zip_lon_col])
+
+            popup_html = (
+                f"ZIP: <b>{z5}</b>"
+                f"<br>Non-clients: <b>{n_zip}</b>"
+                f"<br>Assigned: <b>{abbr}</b>"
+                f"<br>Distance: {dist_txt}"
+            )
+            tooltip = f"{z5} — {n_zip} non-clients → {abbr} ({dist_txt})"
+
+            _add_zip_point(
+                target,
+                lat=lat,
+                lon=lon,
+                dot_color=dot_color,
+                n_people=n_zip,  # <-- SUM THIS in cluster bubble
+                popup_html=popup_html,
+                tooltip=tooltip,
+                use_cluster_marker=cluster,  # <-- important
+            )
 
         fg.add_to(m)
 
@@ -300,7 +320,15 @@ def make_client_zip_map_single_colored(
 
     # 4) ZIP dots (radius scaled by count)
     fg = folium.FeatureGroup(name="Client ZIPs", show=True)
-    cluster = MarkerCluster().add_to(fg)
+    icon_fn = _cluster_sum_people_icon_create_function()
+    cluster = MarkerCluster(
+        icon_create_function=icon_fn,
+        disable_clustering_at_zoom=13,
+        max_cluster_radius=35,
+        spiderfy_on_max_zoom=True,
+        show_coverage_on_hover=False,
+        zoom_to_bounds_on_click=True,
+    ).add_to(fg)
 
     for _, r in zl.iterrows():
         n = int(r["n_people"])
@@ -308,19 +336,22 @@ def make_client_zip_map_single_colored(
         # radius scaling (log keeps big ZIPs from dominating)
         radius = min(18, 4 + np.log1p(n) * 4)
 
-        folium.CircleMarker(
-            location=[float(r[zip_lat_col]), float(r[zip_lon_col])],
-            radius=radius,
-            color=dot_color,
-            fill=True,
-            fill_color=dot_color,
-            fill_opacity=0.7,
-            popup=folium.Popup(
-                f"ZIP: <b>{r[zip_col]}</b><br>Clients: <b>{n}</b>",
-                max_width=260,
-            ),
-            tooltip=f"{r[zip_col]} ({n} clients)",
-        ).add_to(cluster)
+        lat = float(r[zip_lat_col])
+        lon = float(r[zip_lon_col])
+
+        popup_html = f"ZIP: <b>{r[zip_col]}</b><br>Clients: <b>{n}</b>"
+        tooltip = f"{r[zip_col]} ({n} clients)"
+
+        _add_zip_point(
+            cluster,  # <-- cluster container
+            lat=lat,
+            lon=lon,
+            dot_color=dot_color,
+            n_people=n,  # <-- SUM THIS in cluster bubble
+            popup_html=popup_html,
+            tooltip=tooltip,
+            use_cluster_marker=True,
+        )
 
     fg.add_to(m)
 

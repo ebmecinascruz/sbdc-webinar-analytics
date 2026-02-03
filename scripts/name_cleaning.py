@@ -29,25 +29,54 @@ def clean_name(s: str) -> str:
 
 def find_name_collisions(
     people: pd.DataFrame,
+    *,
     name_col: str = "full_name_clean",
-    min_count: int = 2,
+    email_col: str = "email_clean",
+    min_distinct_emails: int = 2,
 ) -> tuple[list[str], pd.DataFrame]:
     """
+    A "name collision" means:
+      same full_name_clean appears with >= min_distinct_emails distinct email_clean values.
+
     Returns:
-      - dup_names: list of names that occur >= min_count times
-      - collisions_df: subset of people with those names + name_count
+      - collision_names: list of full_name_clean values that collide
+      - collisions_df: subset of people containing only those names
+        plus:
+          - name_count: total rows for that name
+          - distinct_email_count: number of distinct emails for that name
     """
-    counts = people[name_col].value_counts(dropna=True)
-    dup_names = counts[counts >= min_count].index.tolist()
+    # basic guardrails
+    missing = {name_col, email_col} - set(people.columns)
+    if missing:
+        raise ValueError(f"people is missing columns: {sorted(missing)}")
 
-    collisions = people[people[name_col].isin(dup_names)].copy()
-    collisions["name_count"] = collisions[name_col].map(counts)
+    tmp = people[[name_col, email_col]].dropna(subset=[name_col]).copy()
 
-    collisions = collisions.sort_values(
-        ["name_count", name_col], ascending=[False, True]
+    # count distinct emails per name
+    distinct_email_counts = (
+        tmp.groupby(name_col)[email_col]
+        .nunique(dropna=True)
+        .sort_values(ascending=False)
     )
 
-    return dup_names, collisions
+    collision_names = distinct_email_counts[
+        distinct_email_counts >= min_distinct_emails
+    ].index.tolist()
+
+    collisions = people[people[name_col].isin(collision_names)].copy()
+
+    # add useful counts
+    name_counts = people[name_col].value_counts(dropna=True)
+    collisions["name_count"] = collisions[name_col].map(name_counts)
+    collisions["distinct_email_count"] = collisions[name_col].map(distinct_email_counts)
+
+    # sort: biggest problems first
+    collisions = collisions.sort_values(
+        ["distinct_email_count", "name_count", name_col],
+        ascending=[False, False, True],
+    )
+
+    return collision_names, collisions
 
 
 def collision_name_set(

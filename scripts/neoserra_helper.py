@@ -93,7 +93,6 @@ def add_zip_geography(
         right_on="zip_clean",
         suffixes=("", "_ref"),
     )
-    # if you merged on left_on, clean up duplicate key
     out = out.drop(columns=["zip_clean_ref"], errors="ignore")
 
     out = add_zip_problems(out, zip_col=zip_col_out)

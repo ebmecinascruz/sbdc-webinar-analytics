@@ -60,3 +60,18 @@ def ensure_state_from_zip(
 
     out = out.drop(columns=["state_code"], errors="ignore")
     return out
+
+
+def ensure_columns_exist(
+    df: pd.DataFrame,
+    cols: list[str],
+) -> pd.DataFrame:
+    """
+    Ensure columns exist in DataFrame.
+    Missing columns are added and filled with NA.
+    """
+    out = df.copy()
+    for col in cols:
+        if col not in out.columns:
+            out[col] = pd.NA
+    return out

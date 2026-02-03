@@ -903,7 +903,6 @@ with tab_maps:
 
                 # clients that exist IN THIS RUN
                 with st.spinner("Generating RUN client ZIP footprint map..."):
-                    # Ensure zip_clean/zip_lat/zip_lon exist for people_master_df
                     if not {"zip_clean", "zip_lat", "zip_lon"}.issubset(
                         people_master_df.columns
                     ):
@@ -931,7 +930,7 @@ with tab_maps:
                         zip_col="zip_clean",
                         zip_lat_col="zip_lat",
                         zip_lon_col="zip_lon",
-                        dot_color="blue",  # pick any single color
+                        dot_color="blue",
                     )
 
                 st.success("Center maps generated and saved.")

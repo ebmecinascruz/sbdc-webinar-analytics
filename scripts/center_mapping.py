@@ -162,7 +162,7 @@ def make_all_attendees_zip_map_single_colored(
             lat=lat,
             lon=lon,
             dot_color=dot_color,
-            n_people=n,  # <-- this is what cluster SUMS
+            n_people=n,
             popup_html=popup_html,
             tooltip=tooltip,
             use_cluster_marker=True,
